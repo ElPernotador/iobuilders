@@ -11,6 +11,7 @@ android/.gradle/
 android/app/build/
 android/local.properties
 android/key.properties
+android/app/src/main/java/
 *.jks
 
 # IDE
