@@ -6,6 +6,7 @@ import 'models/body_metric.dart';
 import 'models/workout.dart';
 import 'models/recipe.dart';
 import 'models/app_settings.dart';
+import 'models/custom_item.dart';
 
 class StorageService {
   static Database? _db;
@@ -26,8 +27,14 @@ class StorageService {
     final path = join(dbPath, 'health_missions.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
+      onUpgrade: (db, oldV, newV) async {
+        if (oldV < 2) {
+          await _createV2Tables(db);
+        }
+      },
       onCreate: (db, version) async {
+        await _createV2Tables(db);
         await db.execute('''
           CREATE TABLE daily_checks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,6 +112,142 @@ class StorageService {
           )
         ''');
       },
+    );
+  }
+
+  /// Tables added in schema v2: user-editable custom items & recipes.
+  static Future<void> _createV2Tables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS custom_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        section TEXT NOT NULL,
+        sortOrder INTEGER DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS custom_checks (
+        date TEXT NOT NULL,
+        itemId INTEGER NOT NULL,
+        checked INTEGER DEFAULT 0,
+        PRIMARY KEY (date, itemId)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS custom_recipes (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        category TEXT,
+        prepMinutes INTEGER DEFAULT 0,
+        cookMinutes INTEGER DEFAULT 0,
+        servings INTEGER DEFAULT 1,
+        ingredients TEXT,
+        steps TEXT,
+        proteinLevel TEXT,
+        carbLevel TEXT,
+        gutNote TEXT,
+        liverNote TEXT,
+        oilLimitNote TEXT,
+        tags TEXT
+      )
+    ''');
+  }
+
+  // --- Custom items (user-defined trackables) ---
+  static Future<List<CustomItem>> getCustomItems() async {
+    final database = await db;
+    final rows = await database.query('custom_items', orderBy: 'sortOrder ASC, id ASC');
+    return rows.map(CustomItem.fromMap).toList();
+  }
+
+  static Future<CustomItem> addCustomItem(String name, String section) async {
+    final database = await db;
+    final item = CustomItem(name: name, section: section, sortOrder: 0);
+    item.id = await database.insert('custom_items', item.toMap());
+    return item;
+  }
+
+  static Future<void> updateCustomItem(CustomItem item) async {
+    final database = await db;
+    await database.update('custom_items', item.toMap(), where: 'id = ?', whereArgs: [item.id]);
+  }
+
+  static Future<void> deleteCustomItem(int id) async {
+    final database = await db;
+    await database.delete('custom_items', where: 'id = ?', whereArgs: [id]);
+    await database.delete('custom_checks', where: 'itemId = ?', whereArgs: [id]);
+  }
+
+  static Future<Set<int>> getCustomChecks(String date) async {
+    final database = await db;
+    final rows = await database.query('custom_checks',
+        where: 'date = ? AND checked = 1', whereArgs: [date]);
+    return rows.map((r) => r['itemId'] as int).toSet();
+  }
+
+  static Future<void> setCustomCheck(String date, int itemId, bool checked) async {
+    final database = await db;
+    await database.insert(
+      'custom_checks',
+      {'date': date, 'itemId': itemId, 'checked': checked ? 1 : 0},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  // --- Custom recipes ---
+  static Future<List<Recipe>> getCustomRecipes() async {
+    final database = await db;
+    final rows = await database.query('custom_recipes', orderBy: 'title ASC');
+    return rows.map(_recipeFromRow).toList();
+  }
+
+  static Future<void> saveCustomRecipe(Recipe r) async {
+    final database = await db;
+    await database.insert(
+      'custom_recipes',
+      {
+        'id': r.id,
+        'title': r.title,
+        'category': r.category,
+        'prepMinutes': r.prepMinutes,
+        'cookMinutes': r.cookMinutes,
+        'servings': r.servings,
+        'ingredients': r.ingredients.join('\n'),
+        'steps': r.steps.join('\n'),
+        'proteinLevel': r.proteinLevel,
+        'carbLevel': r.carbLevel,
+        'gutNote': r.gutNote,
+        'liverNote': r.liverNote,
+        'oilLimitNote': r.oilLimitNote,
+        'tags': r.tags.join(','),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<void> deleteCustomRecipe(String id) async {
+    final database = await db;
+    await database.delete('custom_recipes', where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Recipe _recipeFromRow(Map<String, dynamic> m) {
+    List<String> split(String? s, String sep) =>
+        (s == null || s.isEmpty) ? <String>[] : s.split(sep);
+    return Recipe(
+      id: m['id'],
+      title: m['title'],
+      category: m['category'] ?? 'custom',
+      prepMinutes: m['prepMinutes'] ?? 0,
+      cookMinutes: m['cookMinutes'] ?? 0,
+      servings: m['servings'] ?? 1,
+      ingredients: split(m['ingredients'], '\n'),
+      steps: split(m['steps'], '\n'),
+      proteinLevel: m['proteinLevel'] ?? 'medium',
+      carbLevel: m['carbLevel'] ?? 'low',
+      gutNote: m['gutNote'] ?? '',
+      liverNote: m['liverNote'] ?? '',
+      oilLimitNote: m['oilLimitNote'] ?? '',
+      tags: split(m['tags'], ','),
     );
   }
 

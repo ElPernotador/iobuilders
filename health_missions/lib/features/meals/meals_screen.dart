@@ -88,14 +88,38 @@ class _MealsScreenState extends State<MealsScreen> {
                         _SnackCard(snack: provider.todaySnack!),
                       ],
                       Gap.xl,
-                      SectionLabel('Todas las recetas · ${all.length}'),
+                      SectionLabel(
+                        'Todas las recetas · ${all.length}',
+                        trailing: GestureDetector(
+                          onTap: () => _showRecipeForm(ctx, provider),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.add_circle, size: 16, color: AppColors.primary),
+                              SizedBox(width: 4),
+                              Text('Crear',
+                                  style: TextStyle(color: AppColors.primary, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                        ),
+                      ),
                       Gap.s,
                       _SearchField(onChanged: (v) => setState(() => _query = v)),
                       Gap.m,
-                      ...filtered.map((r) => _RecipeListTile(
-                            recipe: r,
-                            onTap: () => showRecipeDetail(ctx, r),
-                          )),
+                      ...filtered.map((r) {
+                        final mine = provider.isCustom(r);
+                        return _RecipeListTile(
+                          recipe: r,
+                          isCustom: mine,
+                          onTap: () => showRecipeDetail(ctx, r,
+                              onDelete: mine
+                                  ? () {
+                                      Navigator.pop(ctx);
+                                      provider.deleteCustomRecipe(r.id);
+                                    }
+                                  : null),
+                        );
+                      }),
                       if (filtered.isEmpty)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 24),
@@ -152,6 +176,7 @@ class _MealsScreenState extends State<MealsScreen> {
                   padding: const EdgeInsets.only(bottom: 6),
                   child: _RecipeListTile(
                     recipe: r,
+                    isCustom: provider.isCustom(r),
                     onTap: () {
                       Navigator.pop(ctx);
                       provider.skipRecipe(mealType, r.id);
@@ -163,11 +188,235 @@ class _MealsScreenState extends State<MealsScreen> {
       ),
     );
   }
+
+  void _showRecipeForm(BuildContext ctx, MealsProvider provider) {
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => _RecipeForm(
+        onSave: (recipe) {
+          Navigator.pop(ctx);
+          provider.addCustomRecipe(recipe);
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            const SnackBar(content: Text('Receta creada')),
+          );
+        },
+        newId: provider.newRecipeId,
+      ),
+    );
+  }
+}
+
+// ──────────────────────────── Recipe create form ──────────────────────────
+
+class _RecipeForm extends StatefulWidget {
+  final ValueChanged<Recipe> onSave;
+  final String Function(String title) newId;
+  const _RecipeForm({required this.onSave, required this.newId});
+  @override
+  State<_RecipeForm> createState() => _RecipeFormState();
+}
+
+class _RecipeFormState extends State<_RecipeForm> {
+  final _title = TextEditingController();
+  final _ingredients = TextEditingController();
+  final _steps = TextEditingController();
+  final _prep = TextEditingController(text: '10');
+  final _cook = TextEditingController(text: '15');
+  final _gut = TextEditingController();
+  final _liver = TextEditingController();
+  String _protein = 'high';
+  String _carb = 'low';
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _ingredients.dispose();
+    _steps.dispose();
+    _prep.dispose();
+    _cook.dispose();
+    _gut.dispose();
+    _liver.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final title = _title.text.trim();
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ponle un título a la receta')),
+      );
+      return;
+    }
+    final recipe = Recipe(
+      id: widget.newId(title),
+      title: title,
+      category: 'custom',
+      prepMinutes: int.tryParse(_prep.text) ?? 0,
+      cookMinutes: int.tryParse(_cook.text) ?? 0,
+      servings: 1,
+      ingredients: _ingredients.text
+          .split('\n')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      steps: _steps.text
+          .split('\n')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      proteinLevel: _protein,
+      carbLevel: _carb,
+      gutNote: _gut.text.trim(),
+      liverNote: _liver.text.trim(),
+      oilLimitNote: '',
+      tags: const ['custom'],
+    );
+    widget.onSave(recipe);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.9,
+        maxChildSize: 0.95,
+        builder: (_, sc) => ListView(
+          controller: sc,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          children: [
+            const _SheetHandle(),
+            const SizedBox(height: 12),
+            const Text('Nueva receta',
+                style: TextStyle(color: AppColors.textHi, fontSize: 20, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 16),
+            _Field('Título', _title, hint: 'Ej: Tortilla de espinacas'),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _Field('Prep (min)', _prep, number: true)),
+                const SizedBox(width: 12),
+                Expanded(child: _Field('Cocción (min)', _cook, number: true)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const SectionLabel('Proteína'),
+            _Segmented(
+              options: const {'high': 'Alta', 'medium': 'Media', 'low': 'Baja'},
+              value: _protein,
+              onChanged: (v) => setState(() => _protein = v),
+            ),
+            const SizedBox(height: 14),
+            const SectionLabel('Carbohidratos'),
+            _Segmented(
+              options: const {'low': 'Bajo', 'medium': 'Medio', 'high': 'Alto'},
+              value: _carb,
+              onChanged: (v) => setState(() => _carb = v),
+            ),
+            const SizedBox(height: 16),
+            _Field('Ingredientes (uno por línea)', _ingredients, lines: 5,
+                hint: '3 huevos\n100 g espinacas\n…'),
+            const SizedBox(height: 12),
+            _Field('Preparación (un paso por línea)', _steps, lines: 5,
+                hint: 'Batir los huevos\nSaltear las espinacas\n…'),
+            const SizedBox(height: 12),
+            _Field('Nota intestino / IBS (opcional)', _gut),
+            const SizedBox(height: 12),
+            _Field('Nota hígado (opcional)', _liver),
+            const SizedBox(height: 20),
+            PrimaryButton(label: 'Guardar receta', icon: Icons.check, onPressed: _save),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Field extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final String? hint;
+  final int lines;
+  final bool number;
+  const _Field(this.label, this.controller, {this.hint, this.lines = 1, this.number = false});
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: AppColors.textMid, fontSize: 12.5)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          maxLines: lines,
+          keyboardType: number
+              ? TextInputType.number
+              : (lines > 1 ? TextInputType.multiline : TextInputType.text),
+          textCapitalization:
+              number ? TextCapitalization.none : TextCapitalization.sentences,
+          style: const TextStyle(color: AppColors.textHi, fontSize: 14.5),
+          cursorColor: AppColors.primary,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: AppColors.textLo, fontSize: 13.5),
+            filled: true,
+            fillColor: AppColors.surfaceAlt,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Segmented extends StatelessWidget {
+  final Map<String, String> options;
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _Segmented({required this.options, required this.value, required this.onChanged});
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: options.entries.map((e) {
+        final selected = e.key == value;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => onChanged(e.key),
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? AppColors.primary.withValues(alpha: 0.18) : AppColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: selected ? AppColors.primary : Colors.transparent),
+              ),
+              child: Text(e.value,
+                  style: TextStyle(
+                      color: selected ? AppColors.primary : AppColors.textMid,
+                      fontSize: 13.5,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
 }
 
 // ─────────────────────────── Shared detail sheet ──────────────────────────
 
-void showRecipeDetail(BuildContext context, Recipe r) {
+void showRecipeDetail(BuildContext context, Recipe r, {VoidCallback? onDelete}) {
   showModalBottomSheet(
     context: context,
     backgroundColor: AppColors.surface,
@@ -184,9 +433,21 @@ void showRecipeDetail(BuildContext context, Recipe r) {
         children: [
           const _SheetHandle(),
           const SizedBox(height: 10),
-          Text(r.title,
-              style: const TextStyle(
-                  color: AppColors.textHi, fontSize: 22, fontWeight: FontWeight.w800)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(r.title,
+                    style: const TextStyle(
+                        color: AppColors.textHi, fontSize: 22, fontWeight: FontWeight.w800)),
+              ),
+              if (onDelete != null)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+                  tooltip: 'Eliminar receta',
+                  onPressed: onDelete,
+                ),
+            ],
+          ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -447,7 +708,8 @@ class _NoteCard extends StatelessWidget {
 class _RecipeListTile extends StatelessWidget {
   final Recipe recipe;
   final VoidCallback onTap;
-  const _RecipeListTile({required this.recipe, required this.onTap});
+  final bool isCustom;
+  const _RecipeListTile({required this.recipe, required this.onTap, this.isCustom = false});
   @override
   Widget build(BuildContext context) {
     return AppCard(
@@ -460,8 +722,26 @@ class _RecipeListTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(recipe.title,
-                    style: const TextStyle(color: AppColors.textHi, fontSize: 14.5, fontWeight: FontWeight.w600)),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(recipe.title,
+                          style: const TextStyle(color: AppColors.textHi, fontSize: 14.5, fontWeight: FontWeight.w600)),
+                    ),
+                    if (isCustom) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('Tuya',
+                            style: TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Row(
                   children: [

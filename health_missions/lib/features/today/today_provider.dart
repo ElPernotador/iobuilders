@@ -1,20 +1,71 @@
 import 'package:flutter/material.dart';
 import '../../core/date_utils.dart';
+import '../../core/models/custom_item.dart';
 import '../../core/models/daily_check.dart';
 import '../../core/storage_service.dart';
 
 class TodayProvider extends ChangeNotifier {
   DailyCheck? _check;
   bool _loading = true;
+  List<CustomItem> _customItems = [];
+  Set<int> _customChecked = {};
 
   DailyCheck? get check => _check;
   bool get loading => _loading;
 
+  List<CustomItem> customItemsFor(String section) =>
+      _customItems.where((i) => i.section == section).toList();
+  bool isCustomChecked(int id) => _customChecked.contains(id);
+
+  /// Daily completion across built-in habits + custom items.
+  int get completedCount =>
+      (_check?.completionScore ?? 0) + _customChecked.length;
+  int get totalCount => 15 + _customItems.length;
+
   Future<void> loadToday() async {
     _loading = true;
     notifyListeners();
-    _check = await StorageService.getTodayCheck(AppDateUtils.todayString());
+    final date = AppDateUtils.todayString();
+    _check = await StorageService.getTodayCheck(date);
+    _customItems = await StorageService.getCustomItems();
+    _customChecked = await StorageService.getCustomChecks(date);
     _loading = false;
+    notifyListeners();
+  }
+
+  Future<void> addCustomItem(String name, String section) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    final item = await StorageService.addCustomItem(trimmed, section);
+    _customItems = [..._customItems, item];
+    notifyListeners();
+  }
+
+  Future<void> renameCustomItem(CustomItem item, String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    item.name = trimmed;
+    await StorageService.updateCustomItem(item);
+    notifyListeners();
+  }
+
+  Future<void> deleteCustomItem(int id) async {
+    await StorageService.deleteCustomItem(id);
+    _customItems = _customItems.where((i) => i.id != id).toList();
+    _customChecked = {..._customChecked}..remove(id);
+    notifyListeners();
+  }
+
+  Future<void> toggleCustomItem(int id) async {
+    final date = AppDateUtils.todayString();
+    final next = !_customChecked.contains(id);
+    _customChecked = {..._customChecked};
+    if (next) {
+      _customChecked.add(id);
+    } else {
+      _customChecked.remove(id);
+    }
+    await StorageService.setCustomCheck(date, id, next);
     notifyListeners();
   }
 

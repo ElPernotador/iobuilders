@@ -1,12 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/date_utils.dart';
+import '../../core/models/custom_item.dart';
 import '../../core/models/daily_check.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import 'today_provider.dart';
 
-const _kTrackedHabits = 15; // matches DailyCheck.completionScore
+/// Builds the editable custom-item rows for a given section.
+List<Widget> _customRows(TodayProvider provider, String section) {
+  return provider.customItemsFor(section).map((item) {
+    return _EditableCustomRow(
+      key: ValueKey('custom_${item.id}'),
+      item: item,
+      checked: provider.isCustomChecked(item.id!),
+      onToggle: () => provider.toggleCustomItem(item.id!),
+      onRename: (name) => provider.renameCustomItem(item, name),
+      onDelete: () => provider.deleteCustomItem(item.id!),
+    );
+  }).toList();
+}
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
@@ -47,7 +60,13 @@ class _TodayScreenState extends State<TodayScreen> {
           backgroundColor: AppColors.bg,
           body: CustomScrollView(
             slivers: [
-              SliverToBoxAdapter(child: _Hero(check: check, date: today)),
+              SliverToBoxAdapter(
+                child: _Hero(
+                  done: provider.completedCount,
+                  total: provider.totalCount,
+                  date: today,
+                ),
+              ),
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
@@ -68,6 +87,8 @@ class _TodayScreenState extends State<TodayScreen> {
                         _CheckRow('Probiótico', check.probiotic, () => provider.toggle('probiotic'), icon: Icons.biotech),
                         _CheckRow('Vitamina D', check.vitaminD, () => provider.toggle('vitaminD'), icon: Icons.wb_sunny),
                         _CheckRow('Omega 3', check.omega3, () => provider.toggle('omega3'), icon: Icons.water_drop),
+                        ..._customRows(provider, 'supplement'),
+                        _AddItemRow(hint: 'Añadir suplemento', onAdd: (n) => provider.addCustomItem(n, 'supplement')),
                       ]),
                       Gap.xl,
                       const SectionLabel('Alimentación'),
@@ -77,6 +98,8 @@ class _TodayScreenState extends State<TodayScreen> {
                         _CheckRow('Objetivo proteína', check.proteinTarget, () => provider.toggle('proteinTarget'), icon: Icons.egg_alt),
                         _CheckRow('Sin bun/pan', check.noBun, () => provider.toggle('noBun'), icon: Icons.no_food),
                         _CheckRow('Sin ultraprocesados', check.noUltraProcessed, () => provider.toggle('noUltraProcessed'), icon: Icons.fastfood_outlined),
+                        ..._customRows(provider, 'food'),
+                        _AddItemRow(hint: 'Añadir alimento/hábito', onAdd: (n) => provider.addCustomItem(n, 'food')),
                       ]),
                       Gap.xl,
                       const SectionLabel('Entrenamiento'),
@@ -86,6 +109,8 @@ class _TodayScreenState extends State<TodayScreen> {
                             icon: Icons.wb_twilight, highlight: true),
                         _CheckRow('Fuerza', check.strength, () => provider.toggle('strength'), icon: Icons.fitness_center),
                         _CheckRow('Movilidad', check.mobility, () => provider.toggle('mobility'), icon: Icons.self_improvement),
+                        ..._customRows(provider, 'training'),
+                        _AddItemRow(hint: 'Añadir actividad', onAdd: (n) => provider.addCustomItem(n, 'training')),
                       ]),
                       Gap.s,
                       _BicycleCard(check: check, onSave: provider.updateBicycle),
@@ -104,14 +129,15 @@ class _TodayScreenState extends State<TodayScreen> {
 // ───────────────────────────────── Hero ──────────────────────────────────
 
 class _Hero extends StatelessWidget {
-  final DailyCheck check;
+  final int done;
+  final int total;
   final DateTime date;
-  const _Hero({required this.check, required this.date});
+  const _Hero({required this.done, required this.total, required this.date});
 
   @override
   Widget build(BuildContext context) {
-    final score = check.completionScore;
-    final pct = score / _kTrackedHabits;
+    final score = done;
+    final pct = total == 0 ? 0.0 : done / total;
     final top = MediaQuery.of(context).padding.top;
     return Container(
       padding: EdgeInsets.fromLTRB(20, top + 20, 20, 24),
@@ -144,8 +170,8 @@ class _Hero extends StatelessWidget {
                 Text('$score',
                     style: const TextStyle(
                         color: AppColors.textHi, fontSize: 26, fontWeight: FontWeight.w800, height: 1)),
-                const Text('de $_kTrackedHabits',
-                    style: TextStyle(color: AppColors.textMid, fontSize: 11)),
+                Text('de $total',
+                    style: const TextStyle(color: AppColors.textMid, fontSize: 11)),
               ],
             ),
           ),
@@ -321,6 +347,228 @@ class _CheckRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ───────────────────── Editable custom item (inline) ──────────────────────
+
+class _EditableCustomRow extends StatefulWidget {
+  final CustomItem item;
+  final bool checked;
+  final VoidCallback onToggle;
+  final ValueChanged<String> onRename;
+  final VoidCallback onDelete;
+  const _EditableCustomRow({
+    super.key,
+    required this.item,
+    required this.checked,
+    required this.onToggle,
+    required this.onRename,
+    required this.onDelete,
+  });
+  @override
+  State<_EditableCustomRow> createState() => _EditableCustomRowState();
+}
+
+class _EditableCustomRowState extends State<_EditableCustomRow> {
+  bool _editing = false;
+  late final TextEditingController _ctrl = TextEditingController(text: widget.item.name);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    widget.onRename(_ctrl.text);
+    setState(() => _editing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = widget.checked;
+    if (_editing) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        color: AppColors.surfaceAlt,
+        child: Row(
+          children: [
+            const Icon(Icons.edit, size: 18, color: AppColors.blue),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                autofocus: true,
+                style: const TextStyle(color: AppColors.textHi, fontSize: 15),
+                cursorColor: AppColors.primary,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: 'Nombre',
+                  hintStyle: TextStyle(color: AppColors.textLo),
+                ),
+                onSubmitted: (_) => _commit(),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: AppColors.danger, size: 22),
+              tooltip: 'Eliminar',
+              onPressed: widget.onDelete,
+            ),
+            IconButton(
+              icon: const Icon(Icons.check, color: AppColors.primary, size: 22),
+              tooltip: 'Guardar',
+              onPressed: _commit,
+            ),
+          ],
+        ),
+      );
+    }
+    return InkWell(
+      onTap: widget.onToggle,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        color: v ? AppColors.primary.withValues(alpha: 0.06) : Colors.transparent,
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: v ? AppColors.primary.withValues(alpha: 0.15) : AppColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.star_outline,
+                  size: 18, color: v ? AppColors.primary : AppColors.textMid),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(widget.item.name,
+                  style: TextStyle(
+                    color: v ? AppColors.textMid : AppColors.textHi,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    decoration: v ? TextDecoration.lineThrough : null,
+                    decorationColor: AppColors.textLo,
+                  )),
+            ),
+            GestureDetector(
+              onTap: () {
+                _ctrl.text = widget.item.name;
+                setState(() => _editing = true);
+              },
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(Icons.edit_outlined, size: 18, color: AppColors.textLo),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              v ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: v ? AppColors.primary : AppColors.textLo,
+              size: 24,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────── Inline "add item" row ────────────────────────────
+
+class _AddItemRow extends StatefulWidget {
+  final String hint;
+  final ValueChanged<String> onAdd;
+  const _AddItemRow({required this.hint, required this.onAdd});
+  @override
+  State<_AddItemRow> createState() => _AddItemRowState();
+}
+
+class _AddItemRowState extends State<_AddItemRow> {
+  bool _adding = false;
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty) {
+      setState(() => _adding = false);
+      return;
+    }
+    widget.onAdd(text);
+    _ctrl.clear(); // keep open for rapid multiple entries
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_adding) {
+      return InkWell(
+        onTap: () => setState(() => _adding = true),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.add, size: 18, color: AppColors.primary),
+              ),
+              const SizedBox(width: 12),
+              Text(widget.hint,
+                  style: const TextStyle(color: AppColors.textMid, fontSize: 14.5)),
+            ],
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      color: AppColors.surfaceAlt,
+      child: Row(
+        children: [
+          const Icon(Icons.add, size: 18, color: AppColors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _ctrl,
+              autofocus: true,
+              style: const TextStyle(color: AppColors.textHi, fontSize: 15),
+              cursorColor: AppColors.primary,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: widget.hint,
+                hintStyle: const TextStyle(color: AppColors.textLo),
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, color: AppColors.textLo, size: 20),
+            tooltip: 'Cerrar',
+            onPressed: () => setState(() => _adding = false),
+          ),
+          IconButton(
+            icon: const Icon(Icons.check, color: AppColors.primary, size: 22),
+            tooltip: 'Añadir',
+            onPressed: _submit,
+          ),
+        ],
       ),
     );
   }
