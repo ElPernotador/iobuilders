@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/recipe.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 import 'shopping_provider.dart';
 
 class ShoppingScreen extends StatefulWidget {
@@ -23,34 +25,32 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   Widget build(BuildContext context) {
     return Consumer<ShoppingProvider>(
       builder: (ctx, provider, _) {
-        if (provider.loading) return const Center(child: CircularProgressIndicator());
+        if (provider.loading) return const AppLoader();
 
         final grouped = provider.grouped;
         final checked = provider.items.where((i) => i.checked).length;
         final total = provider.items.length;
 
         return Scaffold(
-          backgroundColor: const Color(0xFF121212),
+          backgroundColor: AppColors.bg,
           body: CustomScrollView(
             slivers: [
-              SliverAppBar(
-                backgroundColor: const Color(0xFF1E1E1E),
-                title: Text('Compras (${provider.weekKey})',
-                    style: const TextStyle(color: Colors.white, fontSize: 16)),
-                floating: true,
+              GradientAppBar(
+                title: 'Compras',
+                subtitle: provider.weekKey,
                 actions: [
                   IconButton(
-                    icon: const Icon(Icons.copy, color: Colors.white54),
+                    icon: const Icon(Icons.copy_outlined, color: AppColors.textMid),
                     tooltip: 'Copiar lista',
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: provider.copyList()));
                       ScaffoldMessenger.of(ctx).showSnackBar(
-                        const SnackBar(content: Text('Lista copiada')),
+                        const SnackBar(content: Text('Lista copiada al portapapeles')),
                       );
                     },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.white54),
+                    icon: const Icon(Icons.refresh, color: AppColors.textMid),
                     tooltip: 'Resetear semana',
                     onPressed: () => _confirmReset(ctx, provider),
                   ),
@@ -58,18 +58,17 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
               ),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _ProgressBar(checked: checked, total: total),
-                      const SizedBox(height: 16),
+                      _ProgressCard(checked: checked, total: total),
+                      Gap.l,
                       ...grouped.entries.map((entry) => _CategorySection(
                             category: entry.key,
                             items: entry.value,
                             onToggle: provider.toggleItem,
                           )),
-                      const SizedBox(height: 32),
                     ],
                   ),
                 ),
@@ -85,21 +84,22 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     showDialog(
       context: ctx,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Resetear semana', style: TextStyle(color: Colors.white)),
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Resetear semana', style: TextStyle(color: AppColors.textHi)),
         content: const Text('¿Borrar todos los ticks de la semana actual?',
-            style: TextStyle(color: Colors.white70)),
+            style: TextStyle(color: AppColors.textMid)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
+            child: const Text('Cancelar', style: TextStyle(color: AppColors.textMid)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               provider.resetWeek();
             },
-            child: const Text('Resetear', style: TextStyle(color: Colors.blueAccent)),
+            child: const Text('Resetear', style: TextStyle(color: AppColors.blue)),
           ),
         ],
       ),
@@ -107,32 +107,39 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   }
 }
 
-class _ProgressBar extends StatelessWidget {
+class _ProgressCard extends StatelessWidget {
   final int checked;
   final int total;
-  const _ProgressBar({required this.checked, required this.total});
+  const _ProgressCard({required this.checked, required this.total});
   @override
   Widget build(BuildContext context) {
     final pct = total == 0 ? 0.0 : checked / total;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('$checked de $total artículos', style: const TextStyle(color: Colors.white70, fontSize: 13)),
-            Text('${(pct * 100).round()}%', style: const TextStyle(color: Colors.blueAccent, fontSize: 13)),
-          ],
-        ),
-        const SizedBox(height: 6),
-        LinearProgressIndicator(
-          value: pct,
-          backgroundColor: Colors.white12,
-          valueColor: const AlwaysStoppedAnimation(Colors.blueAccent),
-          minHeight: 6,
-          borderRadius: BorderRadius.circular(3),
-        ),
-      ],
+    final done = total > 0 && checked == total;
+    return AppCard(
+      child: Row(
+        children: [
+          ProgressRing(
+            value: pct,
+            size: 56,
+            stroke: 6,
+            center: Text('${(pct * 100).round()}',
+                style: const TextStyle(color: AppColors.textHi, fontSize: 15, fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(done ? '¡Compra completa! 🎉' : 'Lista de la compra',
+                    style: const TextStyle(color: AppColors.textHi, fontSize: 16, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text('$checked de $total artículos',
+                    style: const TextStyle(color: AppColors.textMid, fontSize: 13)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -143,49 +150,90 @@ class _CategorySection extends StatelessWidget {
   final Function(ShoppingItem) onToggle;
   const _CategorySection({required this.category, required this.items, required this.onToggle});
 
+  IconData get _icon {
+    final c = category.toLowerCase();
+    if (c.contains('prote')) return Icons.set_meal;
+    if (c.contains('verdura') || c.contains('verde')) return Icons.eco;
+    if (c.contains('fruta')) return Icons.apple;
+    if (c.contains('lácteo') || c.contains('lacteo')) return Icons.egg;
+    if (c.contains('despensa') || c.contains('seco')) return Icons.kitchen;
+    if (c.contains('suplemento')) return Icons.medication;
+    return Icons.label_outline;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Text(category.toUpperCase(),
-              style: const TextStyle(color: Colors.white38, fontSize: 11, letterSpacing: 1.5)),
-        ),
-        ...items.map((item) => InkWell(
-              onTap: () => onToggle(item),
-              borderRadius: BorderRadius.circular(6),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: item.checked ? const Color(0xFF1A2A1A) : const Color(0xFF1E1E1E),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      item.checked ? Icons.check_box : Icons.check_box_outline_blank,
-                      color: item.checked ? Colors.greenAccent : Colors.white38,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(item.name,
-                          style: TextStyle(
-                            color: item.checked ? Colors.white38 : Colors.white,
-                            fontSize: 14,
-                            decoration: item.checked ? TextDecoration.lineThrough : null,
-                            decorationColor: Colors.white38,
-                          )),
-                    ),
-                  ],
-                ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_icon, size: 15, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Text(category.toUpperCase(),
+                  style: const TextStyle(
+                      color: AppColors.textMid, fontSize: 11.5, letterSpacing: 1.4, fontWeight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                border: Border.all(color: AppColors.hairline),
+                borderRadius: BorderRadius.circular(AppRadius.card),
               ),
-            )),
-        const SizedBox(height: 8),
-      ],
+              child: Column(
+                children: [
+                  for (int i = 0; i < items.length; i++) ...[
+                    if (i > 0) const Divider(height: 1, color: AppColors.hairlineSoft),
+                    _ItemRow(item: items[i], onToggle: () => onToggle(items[i])),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ItemRow extends StatelessWidget {
+  final ShoppingItem item;
+  final VoidCallback onToggle;
+  const _ItemRow({required this.item, required this.onToggle});
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onToggle,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        color: item.checked ? AppColors.primary.withValues(alpha: 0.06) : Colors.transparent,
+        child: Row(
+          children: [
+            Icon(
+              item.checked ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: item.checked ? AppColors.primary : AppColors.textLo,
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(item.name,
+                  style: TextStyle(
+                    color: item.checked ? AppColors.textMid : AppColors.textHi,
+                    fontSize: 14.5,
+                    decoration: item.checked ? TextDecoration.lineThrough : null,
+                    decorationColor: AppColors.textLo,
+                  )),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

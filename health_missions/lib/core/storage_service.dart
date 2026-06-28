@@ -9,9 +9,15 @@ import 'models/app_settings.dart';
 
 class StorageService {
   static Database? _db;
+  static Future<Database>? _opening;
 
+  /// Guarded singleton: concurrent callers on first frame share one
+  /// [_initDb] future instead of each opening the database (which races
+  /// and can throw "database is locked").
   static Future<Database> get db async {
-    _db ??= await _initDb();
+    if (_db != null) return _db!;
+    _opening ??= _initDb();
+    _db = await _opening!;
     return _db!;
   }
 

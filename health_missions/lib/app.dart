@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'core/theme.dart';
 import 'features/meals/meals_provider.dart';
 import 'features/meals/meals_screen.dart';
 import 'features/progress/progress_provider.dart';
@@ -30,26 +31,7 @@ class HealthMissionsApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Misiones de Salud',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          brightness: Brightness.dark,
-          colorSchemeSeed: Colors.blue,
-          scaffoldBackgroundColor: const Color(0xFF121212),
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Color(0xFF1E1E1E),
-            foregroundColor: Colors.white,
-            elevation: 0,
-          ),
-          navigationBarTheme: const NavigationBarThemeData(
-            backgroundColor: Color(0xFF1E1E1E),
-            indicatorColor: Color(0xFF2A3A5A),
-          ),
-          bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-            backgroundColor: Color(0xFF1E1E1E),
-            selectedItemColor: Colors.blueAccent,
-            unselectedItemColor: Colors.white38,
-          ),
-        ),
+        theme: AppTheme.dark(),
         home: const MainShell(),
       ),
     );
@@ -81,17 +63,40 @@ class _MainShellState extends State<MainShell> {
         index: _index,
         children: _screens,
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.today), label: 'Hoy'),
-          NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Comidas'),
-          NavigationDestination(icon: Icon(Icons.fitness_center), label: 'Entreno'),
-          NavigationDestination(icon: Icon(Icons.shopping_cart), label: 'Compras'),
-          NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Progreso'),
-          NavigationDestination(icon: Icon(Icons.settings), label: 'Ajustes'),
-        ],
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.hairline)),
+        ),
+        child: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: (i) => setState(() => _index = i),
+          destinations: const [
+            NavigationDestination(
+                icon: Icon(Icons.wb_sunny_outlined),
+                selectedIcon: Icon(Icons.wb_sunny),
+                label: 'Hoy'),
+            NavigationDestination(
+                icon: Icon(Icons.restaurant_menu_outlined),
+                selectedIcon: Icon(Icons.restaurant_menu),
+                label: 'Comidas'),
+            NavigationDestination(
+                icon: Icon(Icons.fitness_center_outlined),
+                selectedIcon: Icon(Icons.fitness_center),
+                label: 'Entreno'),
+            NavigationDestination(
+                icon: Icon(Icons.shopping_cart_outlined),
+                selectedIcon: Icon(Icons.shopping_cart),
+                label: 'Compras'),
+            NavigationDestination(
+                icon: Icon(Icons.insights_outlined),
+                selectedIcon: Icon(Icons.insights),
+                label: 'Progreso'),
+            NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: 'Ajustes'),
+          ],
+        ),
       ),
     );
   }

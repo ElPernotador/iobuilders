@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/date_utils.dart';
+import '../../core/models/daily_check.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 import 'today_provider.dart';
+
+const _kTrackedHabits = 15; // matches DailyCheck.completionScore
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
@@ -22,60 +27,68 @@ class _TodayScreenState extends State<TodayScreen> {
   Widget build(BuildContext context) {
     return Consumer<TodayProvider>(
       builder: (ctx, provider, _) {
-        if (provider.loading) {
-          return const Center(child: CircularProgressIndicator());
-        }
+        if (provider.loading) return const AppLoader();
         final check = provider.check;
-        if (check == null) return const Center(child: Text('Error cargando datos'));
+        if (check == null) {
+          return StateMessage(
+            icon: Icons.cloud_off,
+            title: 'No se pudieron cargar los datos',
+            subtitle: 'Inténtalo de nuevo.',
+            action: PrimaryButton(
+              label: 'Reintentar',
+              icon: Icons.refresh,
+              onPressed: () => provider.loadToday(),
+            ),
+          );
+        }
 
         final today = DateTime.now();
-        final dayName = _dayName(today.weekday);
-
         return Scaffold(
-          backgroundColor: const Color(0xFF121212),
+          backgroundColor: AppColors.bg,
           body: CustomScrollView(
             slivers: [
-              SliverAppBar(
-                backgroundColor: const Color(0xFF1E1E1E),
-                title: Text('$dayName ${AppDateUtils.formatDisplayDate(today)}',
-                    style: const TextStyle(color: Colors.white, fontSize: 18)),
-                floating: true,
-              ),
+              SliverToBoxAdapter(child: _Hero(check: check, date: today)),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _PriorityMissions(missions: provider.priorityMissions),
-                      const SizedBox(height: 20),
+                      Gap.l,
                       _PainCard(check: check, onUpdate: provider.updatePain),
-                      const SizedBox(height: 20),
-                      _SectionHeader('Suplementos'),
-                      _CheckRow('Whey', check.whey, () => provider.toggle('whey')),
-                      _CheckRow('Creatina', check.creatine, () => provider.toggle('creatine')),
-                      _CheckRow('MSM', check.msm, () => provider.toggle('msm')),
-                      _CheckRow('Colina', check.choline, () => provider.toggle('choline')),
-                      _CheckRow('Fenogreco', check.fenugreek, () => provider.toggle('fenugreek')),
-                      _CheckRow('Probiótico', check.probiotic, () => provider.toggle('probiotic')),
-                      _CheckRow('Vitamina D', check.vitaminD, () => provider.toggle('vitaminD')),
-                      _CheckRow('Omega 3', check.omega3, () => provider.toggle('omega3')),
-                      const SizedBox(height: 16),
-                      _SectionHeader('Alimentación'),
-                      _CheckRow('Fruta del día', check.fruit, () => provider.toggle('fruit')),
-                      _CheckRow('2 L de agua', check.water2L, () => provider.toggle('water2L')),
-                      _CheckRow('Objetivo proteína', check.proteinTarget, () => provider.toggle('proteinTarget')),
-                      _CheckRow('Sin bun/pan', check.noBun, () => provider.toggle('noBun')),
-                      _CheckRow('Sin ultraprocesados', check.noUltraProcessed, () => provider.toggle('noUltraProcessed')),
-                      const SizedBox(height: 16),
-                      _SectionHeader('Entrenamiento'),
-                      _CheckRow('Misión mañana', check.morningMissionDone,
-                          () => provider.toggle('morningMission'),
-                          highlight: true),
-                      _CheckRow('Fuerza', check.strength, () => provider.toggle('strength')),
-                      _CheckRow('Movilidad', check.mobility, () => provider.toggle('mobility')),
+                      Gap.xl,
+                      const SectionLabel('Suplementos'),
+                      _CheckGroup(children: [
+                        _CheckRow('Whey', check.whey, () => provider.toggle('whey'), icon: Icons.local_drink),
+                        _CheckRow('Creatina', check.creatine, () => provider.toggle('creatine'), icon: Icons.bolt),
+                        _CheckRow('MSM', check.msm, () => provider.toggle('msm'), icon: Icons.healing),
+                        _CheckRow('Colina', check.choline, () => provider.toggle('choline'), icon: Icons.spa),
+                        _CheckRow('Fenogreco', check.fenugreek, () => provider.toggle('fenugreek'), icon: Icons.grass),
+                        _CheckRow('Probiótico', check.probiotic, () => provider.toggle('probiotic'), icon: Icons.biotech),
+                        _CheckRow('Vitamina D', check.vitaminD, () => provider.toggle('vitaminD'), icon: Icons.wb_sunny),
+                        _CheckRow('Omega 3', check.omega3, () => provider.toggle('omega3'), icon: Icons.water_drop),
+                      ]),
+                      Gap.xl,
+                      const SectionLabel('Alimentación'),
+                      _CheckGroup(children: [
+                        _CheckRow('Fruta del día', check.fruit, () => provider.toggle('fruit'), icon: Icons.apple),
+                        _CheckRow('2 L de agua', check.water2L, () => provider.toggle('water2L'), icon: Icons.local_drink_outlined),
+                        _CheckRow('Objetivo proteína', check.proteinTarget, () => provider.toggle('proteinTarget'), icon: Icons.egg_alt),
+                        _CheckRow('Sin bun/pan', check.noBun, () => provider.toggle('noBun'), icon: Icons.no_food),
+                        _CheckRow('Sin ultraprocesados', check.noUltraProcessed, () => provider.toggle('noUltraProcessed'), icon: Icons.fastfood_outlined),
+                      ]),
+                      Gap.xl,
+                      const SectionLabel('Entrenamiento'),
+                      _CheckGroup(children: [
+                        _CheckRow('Misión de la mañana', check.morningMissionDone,
+                            () => provider.toggle('morningMission'),
+                            icon: Icons.wb_twilight, highlight: true),
+                        _CheckRow('Fuerza', check.strength, () => provider.toggle('strength'), icon: Icons.fitness_center),
+                        _CheckRow('Movilidad', check.mobility, () => provider.toggle('mobility'), icon: Icons.self_improvement),
+                      ]),
+                      Gap.s,
                       _BicycleCard(check: check, onSave: provider.updateBicycle),
-                      const SizedBox(height: 32),
                     ],
                   ),
                 ),
@@ -86,12 +99,84 @@ class _TodayScreenState extends State<TodayScreen> {
       },
     );
   }
+}
+
+// ───────────────────────────────── Hero ──────────────────────────────────
+
+class _Hero extends StatelessWidget {
+  final DailyCheck check;
+  final DateTime date;
+  const _Hero({required this.check, required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final score = check.completionScore;
+    final pct = score / _kTrackedHabits;
+    final top = MediaQuery.of(context).padding.top;
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, top + 20, 20, 24),
+      decoration: const BoxDecoration(gradient: AppColors.heroGradient),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_greeting(),
+                    style: const TextStyle(
+                        color: AppColors.textHi, fontSize: 24, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text('${_dayName(date.weekday)}, ${AppDateUtils.formatDisplayDate(date)}',
+                    style: const TextStyle(color: AppColors.textMid, fontSize: 14)),
+                const SizedBox(height: 14),
+                Text(_motivation(pct),
+                    style: const TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          ProgressRing(
+            value: pct,
+            size: 92,
+            center: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('$score',
+                    style: const TextStyle(
+                        color: AppColors.textHi, fontSize: 26, fontWeight: FontWeight.w800, height: 1)),
+                const Text('de $_kTrackedHabits',
+                    style: TextStyle(color: AppColors.textMid, fontSize: 11)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _greeting() {
+    final h = DateTime.now().hour;
+    if (h < 6) return 'Buenas noches';
+    if (h < 13) return 'Buenos días';
+    if (h < 20) return 'Buenas tardes';
+    return 'Buenas noches';
+  }
+
+  String _motivation(double pct) {
+    if (pct >= 1) return '¡Día perfecto! 🏆';
+    if (pct >= 0.7) return 'Vas estupendamente 💪';
+    if (pct >= 0.4) return 'Buen ritmo, sigue así';
+    if (pct > 0) return 'Empieza por una misión';
+    return 'Hoy es tu día — empieza ya';
+  }
 
   String _dayName(int weekday) {
     const days = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
     return days[weekday];
   }
 }
+
+// ──────────────────────────── Priority missions ───────────────────────────
 
 class _PriorityMissions extends StatelessWidget {
   final List<String> missions;
@@ -100,17 +185,17 @@ class _PriorityMissions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (missions.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1B3A2D),
-          borderRadius: BorderRadius.circular(12),
-        ),
+      return AppCard(
+        color: AppColors.primaryDim,
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
         child: const Row(
           children: [
-            Icon(Icons.check_circle, color: Colors.greenAccent, size: 28),
-            SizedBox(width: 12),
-            Text('Misiones del día completadas', style: TextStyle(color: Colors.greenAccent, fontSize: 16)),
+            Icon(Icons.emoji_events, color: AppColors.primary, size: 30),
+            SizedBox(width: 14),
+            Expanded(
+              child: Text('Misiones del día completadas',
+                  style: TextStyle(color: AppColors.primary, fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
           ],
         ),
       );
@@ -118,38 +203,64 @@ class _PriorityMissions extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('MISIONES PRIORITARIAS', style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1.5)),
-        const SizedBox(height: 8),
-        ...missions.map((m) => Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E2A3A),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.4)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.arrow_forward_ios, color: Colors.blueAccent, size: 14),
-              const SizedBox(width: 10),
-              Expanded(child: Text(m, style: const TextStyle(color: Colors.white, fontSize: 14))),
-            ],
-          ),
-        )),
+        const SectionLabel('Misiones prioritarias'),
+        ...missions.asMap().entries.map((e) {
+          final isTop = e.key == 0;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              gradient: isTop ? AppColors.blueGradient : null,
+              color: isTop ? null : AppColors.surface,
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              border: Border.all(
+                  color: isTop ? Colors.transparent : AppColors.hairline),
+            ),
+            child: Row(
+              children: [
+                Icon(isTop ? Icons.star_rounded : Icons.chevron_right,
+                    color: isTop ? Colors.white : AppColors.blue, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(e.value,
+                      style: TextStyle(
+                          color: isTop ? Colors.white : AppColors.textHi,
+                          fontSize: 14.5,
+                          fontWeight: isTop ? FontWeight.w700 : FontWeight.w500)),
+                ),
+              ],
+            ),
+          );
+        }),
       ],
     );
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader(this.title);
+// ─────────────────────────────── Check rows ───────────────────────────────
+
+class _CheckGroup extends StatelessWidget {
+  final List<Widget> children;
+  const _CheckGroup({required this.children});
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(title.toUpperCase(),
-          style: const TextStyle(color: Colors.white54, fontSize: 11, letterSpacing: 1.5)),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadius.card),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          border: Border.all(color: AppColors.hairline),
+        ),
+        child: Column(
+          children: [
+            for (int i = 0; i < children.length; i++) ...[
+              if (i > 0) const Divider(height: 1, color: AppColors.hairlineSoft),
+              children[i],
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -158,38 +269,56 @@ class _CheckRow extends StatelessWidget {
   final String label;
   final bool value;
   final VoidCallback onTap;
+  final IconData icon;
   final bool highlight;
-  const _CheckRow(this.label, this.value, this.onTap, {this.highlight = false});
+  const _CheckRow(this.label, this.value, this.onTap,
+      {required this.icon, this.highlight = false});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: value
-              ? const Color(0xFF1B3A2D)
-              : (highlight ? const Color(0xFF2A1E10) : const Color(0xFF1E1E1E)),
-          borderRadius: BorderRadius.circular(8),
-        ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        color: value ? AppColors.primary.withValues(alpha: 0.06) : Colors.transparent,
         child: Row(
           children: [
-            Icon(
-              value ? Icons.check_box : Icons.check_box_outline_blank,
-              color: value ? Colors.greenAccent : Colors.white38,
-              size: 22,
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: value
+                    ? AppColors.primary.withValues(alpha: 0.15)
+                    : (highlight ? AppColors.orange.withValues(alpha: 0.12) : AppColors.surfaceAlt),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon,
+                  size: 18,
+                  color: value
+                      ? AppColors.primary
+                      : (highlight ? AppColors.orange : AppColors.textMid)),
             ),
             const SizedBox(width: 12),
-            Text(label,
-                style: TextStyle(
-                  color: value ? Colors.greenAccent : Colors.white,
-                  fontSize: 15,
-                  decoration: value ? TextDecoration.lineThrough : null,
-                  decorationColor: Colors.greenAccent,
-                )),
+            Expanded(
+              child: Text(label,
+                  style: TextStyle(
+                    color: value ? AppColors.textMid : AppColors.textHi,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    decoration: value ? TextDecoration.lineThrough : null,
+                    decorationColor: AppColors.textLo,
+                  )),
+            ),
+            AnimatedScale(
+              scale: value ? 1 : 0.85,
+              duration: const Duration(milliseconds: 160),
+              child: Icon(
+                value ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: value ? AppColors.primary : AppColors.textLo,
+                size: 24,
+              ),
+            ),
           ],
         ),
       ),
@@ -197,8 +326,10 @@ class _CheckRow extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────── Pain card ────────────────────────────────
+
 class _PainCard extends StatefulWidget {
-  final dynamic check;
+  final DailyCheck check;
   final Function(int, int, int) onUpdate;
   const _PainCard({required this.check, required this.onUpdate});
   @override
@@ -207,67 +338,69 @@ class _PainCard extends StatefulWidget {
 
 class _PainCardState extends State<_PainCard> {
   bool _expanded = false;
-  late int _shoulder;
-  late int _knee;
-  late int _abdomen;
-
-  @override
-  void initState() {
-    super.initState();
-    _shoulder = widget.check.shoulderPain ?? 0;
-    _knee = widget.check.kneePain ?? 0;
-    _abdomen = widget.check.abdomenBloating ?? 0;
-  }
+  late int _shoulder = widget.check.shoulderPain ?? 0;
+  late int _knee = widget.check.kneePain ?? 0;
+  late int _abdomen = widget.check.abdomenBloating ?? 0;
 
   @override
   Widget build(BuildContext context) {
     final hasPain = _shoulder > 0 || _knee > 0 || _abdomen > 0;
-    return GestureDetector(
+    return AppCard(
       onTap: () => setState(() => _expanded = !_expanded),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: hasPain ? const Color(0xFF2A1A1A) : const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(12),
-          border: hasPain ? Border.all(color: Colors.redAccent.withValues(alpha: 0.4)) : null,
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Icon(Icons.monitor_heart, color: hasPain ? Colors.redAccent : Colors.white38),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    hasPain
-                        ? 'Dolor: hombro $_shoulder/10  rodilla $_knee/10  abdomen $_abdomen/10'
-                        : 'Registro de dolor (toca para editar)',
-                    style: TextStyle(
-                      color: hasPain ? Colors.redAccent : Colors.white54,
-                      fontSize: 13,
-                    ),
-                  ),
+      color: hasPain ? AppColors.dangerDim : AppColors.surface,
+      border: Border.all(
+          color: hasPain ? AppColors.danger.withValues(alpha: 0.4) : AppColors.hairline),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.monitor_heart,
+                  color: hasPain ? AppColors.danger : AppColors.textMid, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  hasPain
+                      ? 'Hombro $_shoulder · Rodilla $_knee · Abdomen $_abdomen'
+                      : 'Registro de dolor',
+                  style: TextStyle(
+                      color: hasPain ? AppColors.danger : AppColors.textHi,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600),
                 ),
-                Icon(_expanded ? Icons.expand_less : Icons.expand_more, color: Colors.white38),
-              ],
-            ),
-            if (_expanded) ...[
-              const SizedBox(height: 12),
-              _PainSlider('Hombro', _shoulder, (v) => setState(() => _shoulder = v)),
-              _PainSlider('Rodilla', _knee, (v) => setState(() => _knee = v)),
-              _PainSlider('Abdomen', _abdomen, (v) => setState(() => _abdomen = v)),
-              const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: () {
-                  widget.onUpdate(_shoulder, _knee, _abdomen);
-                  setState(() => _expanded = false);
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
-                child: const Text('Guardar'),
               ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more, color: AppColors.textMid),
             ],
-          ],
-        ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 220),
+            crossFadeState: _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Column(
+                children: [
+                  _PainSlider('Hombro', _shoulder, (v) => setState(() => _shoulder = v)),
+                  _PainSlider('Rodilla', _knee, (v) => setState(() => _knee = v)),
+                  _PainSlider('Abdomen', _abdomen, (v) => setState(() => _abdomen = v)),
+                  const SizedBox(height: 10),
+                  PrimaryButton(
+                    label: 'Guardar dolor',
+                    icon: Icons.save_outlined,
+                    gradient: AppColors.blueGradient,
+                    height: 46,
+                    onPressed: () {
+                      widget.onUpdate(_shoulder, _knee, _abdomen);
+                      setState(() => _expanded = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Dolor registrado'), duration: Duration(seconds: 1)),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -280,26 +413,41 @@ class _PainSlider extends StatelessWidget {
   const _PainSlider(this.label, this.value, this.onChanged);
   @override
   Widget build(BuildContext context) {
+    final hot = value >= 6;
     return Row(
       children: [
-        SizedBox(width: 70, child: Text(label, style: const TextStyle(color: Colors.white70))),
+        SizedBox(width: 64, child: Text(label, style: const TextStyle(color: AppColors.textMid, fontSize: 13))),
         Expanded(
-          child: Slider(
-            value: value.toDouble(),
-            min: 0, max: 10, divisions: 10,
-            label: '$value',
-            activeColor: value >= 6 ? Colors.redAccent : Colors.blueAccent,
-            onChanged: (v) => onChanged(v.round()),
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: hot ? AppColors.danger : AppColors.blue,
+              thumbColor: hot ? AppColors.danger : AppColors.blue,
+            ),
+            child: Slider(
+              value: value.toDouble(),
+              min: 0, max: 10, divisions: 10,
+              label: '$value',
+              onChanged: (v) => onChanged(v.round()),
+            ),
           ),
         ),
-        SizedBox(width: 24, child: Text('$value', style: const TextStyle(color: Colors.white70))),
+        Container(
+          width: 30,
+          alignment: Alignment.center,
+          child: Text('$value',
+              style: TextStyle(
+                  color: hot ? AppColors.danger : AppColors.textHi,
+                  fontWeight: FontWeight.w700)),
+        ),
       ],
     );
   }
 }
 
+// ─────────────────────────────── Bicycle ──────────────────────────────────
+
 class _BicycleCard extends StatefulWidget {
-  final dynamic check;
+  final DailyCheck check;
   final Function(int, int) onSave;
   const _BicycleCard({required this.check, required this.onSave});
   @override
@@ -308,95 +456,97 @@ class _BicycleCard extends StatefulWidget {
 
 class _BicycleCardState extends State<_BicycleCard> {
   bool _expanded = false;
-  int _minutes = 20;
-  int _intensity = 2;
-
-  @override
-  void initState() {
-    super.initState();
-    _minutes = widget.check.bicycleMinutes ?? 20;
-    _intensity = widget.check.bicycleIntensity ?? 2;
-  }
+  late int _minutes = widget.check.bicycleMinutes ?? 20;
+  late int _intensity = widget.check.bicycleIntensity ?? 2;
 
   @override
   Widget build(BuildContext context) {
-    final done = widget.check.bicycle as bool;
-    return GestureDetector(
+    final done = widget.check.bicycle;
+    return AppCard(
+      margin: const EdgeInsets.only(top: 8),
       onTap: () => setState(() => _expanded = !_expanded),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: done ? const Color(0xFF1B3A2D) : const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Icon(
-                  done ? Icons.check_box : Icons.check_box_outline_blank,
-                  color: done ? Colors.greenAccent : Colors.white38, size: 22,
+      color: done ? AppColors.primary.withValues(alpha: 0.06) : AppColors.surface,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: done ? AppColors.primary.withValues(alpha: 0.15) : AppColors.surfaceAlt,
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    done
-                        ? 'Bicicleta ${widget.check.bicycleMinutes ?? _minutes} min'
-                        : 'Bicicleta',
-                    style: TextStyle(
-                      color: done ? Colors.greenAccent : Colors.white,
+                child: Icon(Icons.directions_bike,
+                    size: 18, color: done ? AppColors.primary : AppColors.textMid),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  done ? 'Bicicleta · ${widget.check.bicycleMinutes ?? _minutes} min' : 'Bicicleta',
+                  style: TextStyle(
+                      color: done ? AppColors.textMid : AppColors.textHi,
                       fontSize: 15,
-                    ),
-                  ),
+                      fontWeight: FontWeight.w500),
                 ),
-                Icon(_expanded ? Icons.expand_less : Icons.expand_more, color: Colors.white38),
-              ],
-            ),
-            if (_expanded) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  const Text('Minutos: ', style: TextStyle(color: Colors.white70)),
-                  Expanded(
-                    child: Slider(
-                      value: _minutes.toDouble(),
-                      min: 10, max: 60, divisions: 10,
-                      label: '$_minutes min',
-                      activeColor: Colors.greenAccent,
-                      onChanged: (v) => setState(() => _minutes = v.round()),
-                    ),
-                  ),
-                  Text('$_minutes', style: const TextStyle(color: Colors.white70)),
-                ],
               ),
-              Row(
-                children: [
-                  const Text('Intensidad: ', style: TextStyle(color: Colors.white70)),
-                  Expanded(
-                    child: Slider(
-                      value: _intensity.toDouble(),
-                      min: 1, max: 5, divisions: 4,
-                      label: '$_intensity/5',
-                      activeColor: Colors.greenAccent,
-                      onChanged: (v) => setState(() => _intensity = v.round()),
-                    ),
-                  ),
-                  Text('$_intensity/5', style: const TextStyle(color: Colors.white70)),
-                ],
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  widget.onSave(_minutes, _intensity);
-                  setState(() => _expanded = false);
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.greenAccent, foregroundColor: Colors.black),
-                child: const Text('Registrar bici'),
-              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more, color: AppColors.textMid),
             ],
-          ],
-        ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 220),
+            crossFadeState: _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Column(
+                children: [
+                  _LabeledSlider('Minutos', _minutes, 10, 60, 10, '$_minutes min',
+                      (v) => setState(() => _minutes = v)),
+                  _LabeledSlider('Intensidad', _intensity, 1, 5, 4, '$_intensity/5',
+                      (v) => setState(() => _intensity = v)),
+                  const SizedBox(height: 8),
+                  PrimaryButton(
+                    label: 'Registrar bici',
+                    icon: Icons.check,
+                    height: 46,
+                    onPressed: () {
+                      widget.onSave(_minutes, _intensity);
+                      setState(() => _expanded = false);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _LabeledSlider extends StatelessWidget {
+  final String label;
+  final int value, min, max, divisions;
+  final String display;
+  final ValueChanged<int> onChanged;
+  const _LabeledSlider(
+      this.label, this.value, this.min, this.max, this.divisions, this.display, this.onChanged);
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(width: 80, child: Text(label, style: const TextStyle(color: AppColors.textMid, fontSize: 13))),
+        Expanded(
+          child: Slider(
+            value: value.toDouble(),
+            min: min.toDouble(), max: max.toDouble(), divisions: divisions,
+            label: display,
+            onChanged: (v) => onChanged(v.round()),
+          ),
+        ),
+        SizedBox(width: 52, child: Text(display, textAlign: TextAlign.end, style: const TextStyle(color: AppColors.textHi, fontSize: 12, fontWeight: FontWeight.w600))),
+      ],
     );
   }
 }

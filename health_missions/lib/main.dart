@@ -4,6 +4,11 @@ import 'core/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService.init();
+  // Never let notification setup block the app from launching.
+  try {
+    await NotificationService.init();
+  } catch (_) {
+    // Notifications are best-effort; the app must still start.
+  }
   runApp(const HealthMissionsApp());
 }

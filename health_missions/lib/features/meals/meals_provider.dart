@@ -15,36 +15,43 @@ class MealsProvider extends ChangeNotifier {
   String? _todaySnack;
   Map<String, String?> _skipped = {};
   bool _loading = true;
+  String? _error;
   AppSettings? _settings;
 
   Recipe? get todayLunch => _todayLunch;
   Recipe? get todayDinner => _todayDinner;
   String? get todaySnack => _todaySnack;
   bool get loading => _loading;
+  String? get error => _error;
 
   Future<void> load() async {
     _loading = true;
+    _error = null;
     notifyListeners();
 
-    _settings = await StorageService.getSettings();
-    final today = DateTime.now();
-    final weekIndex = AppDateUtils.planWeekIndex(_appStart, today);
-    final dow = today.weekday;
-    final planDay = getMealPlanDay(weekIndex, dow);
+    try {
+      _settings = await StorageService.getSettings();
+      final today = DateTime.now();
+      final weekIndex = AppDateUtils.planWeekIndex(_appStart, today);
+      final dow = today.weekday;
+      final planDay = getMealPlanDay(weekIndex, dow);
 
-    final dateStr = AppDateUtils.todayString();
-    _skipped = await StorageService.getSkippedRecipes(dateStr);
+      final dateStr = AppDateUtils.todayString();
+      _skipped = await StorageService.getSkippedRecipes(dateStr);
 
-    if (planDay != null) {
-      final lunchId = _skipped['lunch'] ?? planDay.lunchRecipeId;
-      final dinnerId = _skipped['dinner'] ?? planDay.dinnerRecipeId;
-      _todayLunch = lunchId != null ? findRecipeById(lunchId) : null;
-      _todayDinner = dinnerId != null ? findRecipeById(dinnerId) : null;
-      _todaySnack = planDay.snackSuggestion;
+      if (planDay != null) {
+        final lunchId = _skipped['lunch'] ?? planDay.lunchRecipeId;
+        final dinnerId = _skipped['dinner'] ?? planDay.dinnerRecipeId;
+        _todayLunch = lunchId != null ? findRecipeById(lunchId) : null;
+        _todayDinner = dinnerId != null ? findRecipeById(dinnerId) : null;
+        _todaySnack = planDay.snackSuggestion;
+      }
+    } catch (e) {
+      _error = 'No se pudieron cargar las comidas';
+    } finally {
+      _loading = false;
+      notifyListeners();
     }
-
-    _loading = false;
-    notifyListeners();
   }
 
   Future<void> skipRecipe(String mealType, String? replacementId) async {

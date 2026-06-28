@@ -9,6 +9,7 @@ class TrainingProvider extends ChangeNotifier {
   List<Exercise> _filteredExercises = [];
   WorkoutLog? _todayLog;
   bool _loading = true;
+  String? _error;
   int _shoulderPain = 0;
   int _kneePain = 0;
   String _trainingType = 'rest';
@@ -17,35 +18,48 @@ class TrainingProvider extends ChangeNotifier {
   List<Exercise> get exercises => _filteredExercises;
   WorkoutLog? get todayLog => _todayLog;
   bool get loading => _loading;
+  String? get error => _error;
   String get trainingType => _trainingType;
+  int get shoulderPain => _shoulderPain;
+  int get kneePain => _kneePain;
 
   Future<void> load() async {
     _loading = true;
+    _error = null;
     notifyListeners();
 
-    final today = DateTime.now();
-    final dateStr = AppDateUtils.todayString();
-    _trainingType = AppDateUtils.trainingTypeForDay(today);
+    try {
+      final today = DateTime.now();
+      final dateStr = AppDateUtils.todayString();
+      _trainingType = AppDateUtils.trainingTypeForDay(today);
 
-    final todayCheck = await StorageService.getTodayCheck(dateStr);
-    _shoulderPain = todayCheck.shoulderPain ?? 0;
-    _kneePain = todayCheck.kneePain ?? 0;
+      final todayCheck = await StorageService.getTodayCheck(dateStr);
+      _shoulderPain = todayCheck.shoulderPain ?? 0;
+      _kneePain = todayCheck.kneePain ?? 0;
 
-    _todayWorkout = getWorkoutForType(_trainingType);
-    if (_todayWorkout != null) {
-      _filteredExercises = filterExercisesForPain(
-        exercises: _todayWorkout!.exercises,
-        shoulderPain: _shoulderPain,
-        kneePain: _kneePain,
-      );
-    } else {
-      _filteredExercises = [];
+      _todayWorkout = getWorkoutForType(_trainingType);
+      if (_todayWorkout != null) {
+        _filteredExercises = filterExercisesForPain(
+          exercises: _todayWorkout!.exercises,
+          shoulderPain: _shoulderPain,
+          kneePain: _kneePain,
+        );
+      } else {
+        _filteredExercises = [];
+      }
+
+      _todayLog = await StorageService.getWorkoutLogForDate(dateStr);
+    } catch (e) {
+      _error = 'No se pudo cargar el entrenamiento';
+    } finally {
+      _loading = false;
+      notifyListeners();
     }
-
-    _todayLog = await StorageService.getWorkoutLogForDate(dateStr);
-    _loading = false;
-    notifyListeners();
   }
+
+  /// How many exercises were hidden by the pain filter.
+  int get hiddenByPain =>
+      (_todayWorkout?.exercises.length ?? 0) - _filteredExercises.length;
 
   bool isExerciseCompleted(String exerciseId) {
     return _todayLog?.completedExerciseIds.contains(exerciseId) ?? false;

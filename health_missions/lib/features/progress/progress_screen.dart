@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/date_utils.dart';
 import '../../core/models/body_metric.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 import 'progress_provider.dart';
 
 class ProgressScreen extends StatefulWidget {
@@ -27,18 +29,17 @@ class _ProgressScreenState extends State<ProgressScreen> {
   Widget build(BuildContext context) {
     return Consumer<ProgressProvider>(
       builder: (ctx, provider, _) {
-        if (provider.loading) return const Center(child: CircularProgressIndicator());
+        if (provider.loading) return const AppLoader();
         return Scaffold(
-          backgroundColor: const Color(0xFF121212),
+          backgroundColor: AppColors.bg,
           body: CustomScrollView(
             slivers: [
-              SliverAppBar(
-                backgroundColor: const Color(0xFF1E1E1E),
-                title: const Text('Progreso', style: TextStyle(color: Colors.white)),
-                floating: true,
+              GradientAppBar(
+                title: 'Progreso',
                 actions: [
                   IconButton(
-                    icon: const Icon(Icons.add, color: Colors.white),
+                    icon: const Icon(Icons.add, color: AppColors.textHi),
+                    tooltip: 'Registrar medidas',
                     onPressed: () => _showAddMetric(ctx, provider),
                   ),
                 ],
