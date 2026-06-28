@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'core/nav_controller.dart';
 import 'core/theme.dart';
 import 'features/meals/meals_provider.dart';
 import 'features/meals/meals_screen.dart';
@@ -21,6 +22,7 @@ class HealthMissionsApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => NavController()),
         ChangeNotifierProvider(create: (_) => TodayProvider()),
         ChangeNotifierProvider(create: (_) => MealsProvider()),
         ChangeNotifierProvider(create: (_) => TrainingProvider()),
@@ -45,8 +47,6 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int _index = 0;
-
   static const _screens = [
     TodayScreen(),
     MealsScreen(),
@@ -58,9 +58,10 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    final nav = context.watch<NavController>();
     return Scaffold(
       body: IndexedStack(
-        index: _index,
+        index: nav.index,
         children: _screens,
       ),
       bottomNavigationBar: Container(
@@ -68,8 +69,8 @@ class _MainShellState extends State<MainShell> {
           border: Border(top: BorderSide(color: AppColors.hairline)),
         ),
         child: NavigationBar(
-          selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
+          selectedIndex: nav.index,
+          onDestinationSelected: (i) => nav.goTo(i),
           destinations: const [
             NavigationDestination(
                 icon: Icon(Icons.wb_sunny_outlined),

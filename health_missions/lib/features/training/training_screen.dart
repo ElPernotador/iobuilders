@@ -54,7 +54,20 @@ class _TrainingScreenState extends State<TrainingScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                  child: _buildContent(ctx, provider),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _QuickLog(provider: provider),
+                      Gap.m,
+                      _PainEditor(
+                        key: ValueKey(
+                            '${provider.shoulderPain}-${provider.kneePain}-${provider.abdomenBloating}'),
+                        provider: provider,
+                      ),
+                      Gap.xl,
+                      _buildContent(ctx, provider),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -195,6 +208,192 @@ class _TrainingScreenState extends State<TrainingScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────── Quick log: misión mañana + movilidad ─────────────────
+
+class _QuickLog extends StatelessWidget {
+  final TrainingProvider provider;
+  const _QuickLog({required this.provider});
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _QuickToggle(
+            label: 'Misión mañana',
+            icon: Icons.wb_twilight,
+            active: provider.morningMissionDone,
+            onTap: provider.toggleMorningMission,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _QuickToggle(
+            label: 'Movilidad',
+            icon: Icons.self_improvement,
+            active: provider.mobilityDone,
+            onTap: provider.toggleMobility,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickToggle extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+  const _QuickToggle({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      color: active ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface,
+      border: Border.all(
+          color: active ? AppColors.primary.withValues(alpha: 0.4) : AppColors.hairline),
+      child: Row(
+        children: [
+          Icon(active ? Icons.check_circle : icon,
+              size: 20, color: active ? AppColors.primary : AppColors.textMid),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(label,
+                style: TextStyle(
+                    color: active ? AppColors.primary : AppColors.textHi,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────────── Pain editor ────────────────────────────────
+
+class _PainEditor extends StatefulWidget {
+  final TrainingProvider provider;
+  const _PainEditor({super.key, required this.provider});
+  @override
+  State<_PainEditor> createState() => _PainEditorState();
+}
+
+class _PainEditorState extends State<_PainEditor> {
+  bool _expanded = false;
+  late int _shoulder = widget.provider.shoulderPain;
+  late int _knee = widget.provider.kneePain;
+  late int _abdomen = widget.provider.abdomenBloating;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPain = _shoulder > 0 || _knee > 0 || _abdomen > 0;
+    return AppCard(
+      onTap: () => setState(() => _expanded = !_expanded),
+      color: hasPain ? AppColors.dangerDim : AppColors.surface,
+      border: Border.all(
+          color: hasPain ? AppColors.danger.withValues(alpha: 0.4) : AppColors.hairline),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.monitor_heart,
+                  color: hasPain ? AppColors.danger : AppColors.textMid, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  hasPain
+                      ? 'Dolor — hombro $_shoulder · rodilla $_knee · abdomen $_abdomen'
+                      : 'Registro de dolor (adapta la rutina)',
+                  style: TextStyle(
+                      color: hasPain ? AppColors.danger : AppColors.textHi,
+                      fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more, color: AppColors.textMid),
+            ],
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 220),
+            crossFadeState: _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Column(
+                children: [
+                  _PainSlider('Hombro', _shoulder, (v) => setState(() => _shoulder = v)),
+                  _PainSlider('Rodilla', _knee, (v) => setState(() => _knee = v)),
+                  _PainSlider('Abdomen', _abdomen, (v) => setState(() => _abdomen = v)),
+                  const SizedBox(height: 10),
+                  PrimaryButton(
+                    label: 'Guardar dolor',
+                    icon: Icons.save_outlined,
+                    gradient: AppColors.blueGradient,
+                    height: 46,
+                    onPressed: () {
+                      widget.provider.updatePain(_shoulder, _knee, _abdomen);
+                      setState(() => _expanded = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Dolor registrado · rutina adaptada'),
+                            duration: Duration(seconds: 1)),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PainSlider extends StatelessWidget {
+  final String label;
+  final int value;
+  final ValueChanged<int> onChanged;
+  const _PainSlider(this.label, this.value, this.onChanged);
+  @override
+  Widget build(BuildContext context) {
+    final hot = value >= 6;
+    return Row(
+      children: [
+        SizedBox(width: 64, child: Text(label, style: const TextStyle(color: AppColors.textMid, fontSize: 13))),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: hot ? AppColors.danger : AppColors.blue,
+              thumbColor: hot ? AppColors.danger : AppColors.blue,
+            ),
+            child: Slider(
+              value: value.toDouble(),
+              min: 0, max: 10, divisions: 10,
+              label: '$value',
+              onChanged: (v) => onChanged(v.round()),
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 30,
+          child: Text('$value',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: hot ? AppColors.danger : AppColors.textHi,
+                  fontWeight: FontWeight.w700)),
+        ),
+      ],
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/date_utils.dart';
+import '../../core/models/daily_check.dart';
 import '../../core/models/workout.dart';
 import '../../core/storage_service.dart';
 import '../../data/seed_training_plan.dart';
@@ -8,10 +9,12 @@ class TrainingProvider extends ChangeNotifier {
   Workout? _todayWorkout;
   List<Exercise> _filteredExercises = [];
   WorkoutLog? _todayLog;
+  DailyCheck? _check;
   bool _loading = true;
   String? _error;
   int _shoulderPain = 0;
   int _kneePain = 0;
+  int _abdomenBloating = 0;
   String _trainingType = 'rest';
 
   Workout? get todayWorkout => _todayWorkout;
@@ -22,6 +25,9 @@ class TrainingProvider extends ChangeNotifier {
   String get trainingType => _trainingType;
   int get shoulderPain => _shoulderPain;
   int get kneePain => _kneePain;
+  int get abdomenBloating => _abdomenBloating;
+  bool get morningMissionDone => _check?.morningMissionDone ?? false;
+  bool get mobilityDone => _check?.mobility ?? false;
 
   Future<void> load() async {
     _loading = true;
@@ -33,20 +39,12 @@ class TrainingProvider extends ChangeNotifier {
       final dateStr = AppDateUtils.todayString();
       _trainingType = AppDateUtils.trainingTypeForDay(today);
 
-      final todayCheck = await StorageService.getTodayCheck(dateStr);
-      _shoulderPain = todayCheck.shoulderPain ?? 0;
-      _kneePain = todayCheck.kneePain ?? 0;
+      _check = await StorageService.getTodayCheck(dateStr);
+      _shoulderPain = _check!.shoulderPain ?? 0;
+      _kneePain = _check!.kneePain ?? 0;
+      _abdomenBloating = _check!.abdomenBloating ?? 0;
 
-      _todayWorkout = getWorkoutForType(_trainingType);
-      if (_todayWorkout != null) {
-        _filteredExercises = filterExercisesForPain(
-          exercises: _todayWorkout!.exercises,
-          shoulderPain: _shoulderPain,
-          kneePain: _kneePain,
-        );
-      } else {
-        _filteredExercises = [];
-      }
+      _refilter();
 
       _todayLog = await StorageService.getWorkoutLogForDate(dateStr);
     } catch (e) {
@@ -55,6 +53,49 @@ class TrainingProvider extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  void _refilter() {
+    _todayWorkout = getWorkoutForType(_trainingType);
+    if (_todayWorkout != null) {
+      _filteredExercises = filterExercisesForPain(
+        exercises: _todayWorkout!.exercises,
+        shoulderPain: _shoulderPain,
+        kneePain: _kneePain,
+      );
+    } else {
+      _filteredExercises = [];
+    }
+  }
+
+  /// Update today's pain levels (also re-adapts the exercise list).
+  Future<void> updatePain(int shoulder, int knee, int abdomen) async {
+    if (_check == null) return;
+    _shoulderPain = shoulder;
+    _kneePain = knee;
+    _abdomenBloating = abdomen;
+    _check = _check!.copyWith(
+      shoulderPain: shoulder,
+      kneePain: knee,
+      abdomenBloating: abdomen,
+    );
+    _refilter();
+    await StorageService.saveDailyCheck(_check!);
+    notifyListeners();
+  }
+
+  Future<void> toggleMorningMission() async {
+    if (_check == null) return;
+    _check = _check!.copyWith(morningMissionDone: !_check!.morningMissionDone);
+    await StorageService.saveDailyCheck(_check!);
+    notifyListeners();
+  }
+
+  Future<void> toggleMobility() async {
+    if (_check == null) return;
+    _check = _check!.copyWith(mobility: !_check!.mobility);
+    await StorageService.saveDailyCheck(_check!);
+    notifyListeners();
   }
 
   /// How many exercises were hidden by the pain filter.
@@ -102,13 +143,20 @@ class TrainingProvider extends ChangeNotifier {
     _todayLog = log;
     await StorageService.saveWorkoutLog(log);
 
-    // Update daily check
-    final check = await StorageService.getTodayCheck(dateStr);
+    // Update daily check (kept in memory so the Hoy summary stays accurate).
+    final check = _check ?? await StorageService.getTodayCheck(dateStr);
     if (_trainingType.startsWith('strength')) {
-      await StorageService.saveDailyCheck(check.copyWith(strength: true, morningMissionDone: true));
+      _check = check.copyWith(strength: true, morningMissionDone: true);
     } else if (_trainingType == 'bicycle') {
-      await StorageService.saveDailyCheck(check.copyWith(bicycle: true, bicycleMinutes: durationMinutes));
+      _check = check.copyWith(
+        bicycle: true,
+        bicycleMinutes: durationMinutes,
+        bicycleIntensity: effort,
+      );
+    } else {
+      _check = check;
     }
+    await StorageService.saveDailyCheck(_check!);
     notifyListeners();
   }
 

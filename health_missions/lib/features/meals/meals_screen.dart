@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/mealdb_service.dart';
 import '../../core/models/recipe.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
@@ -90,17 +91,21 @@ class _MealsScreenState extends State<MealsScreen> {
                       Gap.xl,
                       SectionLabel(
                         'Todas las recetas · ${all.length}',
-                        trailing: GestureDetector(
-                          onTap: () => _showRecipeForm(ctx, provider),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.add_circle, size: 16, color: AppColors.primary),
-                              SizedBox(width: 4),
-                              Text('Crear',
-                                  style: TextStyle(color: AppColors.primary, fontSize: 12.5, fontWeight: FontWeight.w700)),
-                            ],
-                          ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _HeaderAction(
+                              icon: Icons.travel_explore,
+                              label: 'Internet',
+                              onTap: () => _showInternetSearch(ctx, provider),
+                            ),
+                            const SizedBox(width: 14),
+                            _HeaderAction(
+                              icon: Icons.add_circle,
+                              label: 'Crear',
+                              onTap: () => _showRecipeForm(ctx, provider),
+                            ),
+                          ],
                         ),
                       ),
                       Gap.s,
@@ -205,6 +210,46 @@ class _MealsScreenState extends State<MealsScreen> {
           );
         },
         newId: provider.newRecipeId,
+      ),
+    );
+  }
+
+  void _showInternetSearch(BuildContext ctx, MealsProvider provider) {
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => _InternetSearchSheet(
+        onSave: (recipe) {
+          provider.addCustomRecipe(recipe);
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            const SnackBar(content: Text('Receta guardada en tus recetas')),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HeaderAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _HeaderAction({required this.icon, required this.label, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AppColors.primary),
+          const SizedBox(width: 4),
+          Text(label,
+              style: const TextStyle(color: AppColors.primary, fontSize: 12.5, fontWeight: FontWeight.w700)),
+        ],
       ),
     );
   }
@@ -416,7 +461,8 @@ class _Segmented extends StatelessWidget {
 
 // ─────────────────────────── Shared detail sheet ──────────────────────────
 
-void showRecipeDetail(BuildContext context, Recipe r, {VoidCallback? onDelete}) {
+void showRecipeDetail(BuildContext context, Recipe r,
+    {VoidCallback? onDelete, VoidCallback? onSave}) {
   showModalBottomSheet(
     context: context,
     backgroundColor: AppColors.surface,
@@ -510,6 +556,17 @@ void showRecipeDetail(BuildContext context, Recipe r, {VoidCallback? onDelete}) 
             _NoteCard(Icons.favorite, 'Hígado', r.liverNote, AppColors.orange),
           if (r.oilLimitNote.isNotEmpty)
             _NoteCard(Icons.opacity, 'Aceite', r.oilLimitNote, AppColors.blue),
+          if (onSave != null) ...[
+            const SizedBox(height: 20),
+            PrimaryButton(
+              label: 'Guardar en mis recetas',
+              icon: Icons.bookmark_add_outlined,
+              onPressed: () {
+                Navigator.pop(context);
+                onSave();
+              },
+            ),
+          ],
         ],
       ),
     ),
@@ -762,6 +819,172 @@ class _RecipeListTile extends StatelessWidget {
           const Icon(Icons.chevron_right, color: AppColors.textLo),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────── Internet recipe search (TheMealDB) ────────────────
+
+class _InternetSearchSheet extends StatefulWidget {
+  final ValueChanged<Recipe> onSave;
+  const _InternetSearchSheet({required this.onSave});
+  @override
+  State<_InternetSearchSheet> createState() => _InternetSearchSheetState();
+}
+
+class _InternetSearchSheetState extends State<_InternetSearchSheet> {
+  final _ctrl = TextEditingController();
+  bool _loading = false;
+  String? _error;
+  List<Recipe> _results = [];
+  bool _searched = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final q = _ctrl.text.trim();
+    if (q.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _loading = true;
+      _error = null;
+      _searched = true;
+    });
+    try {
+      final results = await MealDbService.searchByName(q);
+      if (!mounted) return;
+      setState(() {
+        _results = results;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Sin conexión o error al buscar. Inténtalo de nuevo.';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.85,
+        maxChildSize: 0.95,
+        builder: (_, sc) => Column(
+          children: [
+            const SizedBox(height: 12),
+            const _SheetHandle(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Buscar recetas en internet',
+                      style: TextStyle(color: AppColors.textHi, fontSize: 19, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 4),
+                  const Text('Fuente: TheMealDB · suele estar en inglés',
+                      style: TextStyle(color: AppColors.textLo, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _ctrl,
+                          autofocus: true,
+                          style: const TextStyle(color: AppColors.textHi),
+                          cursorColor: AppColors.primary,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) => _search(),
+                          decoration: InputDecoration(
+                            hintText: 'Ej: chicken, salmon, omelette…',
+                            hintStyle: const TextStyle(color: AppColors.textLo),
+                            prefixIcon: const Icon(Icons.search, color: AppColors.textMid),
+                            filled: true,
+                            fillColor: AppColors.surfaceAlt,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        height: 52,
+                        child: PrimaryButton(label: 'Buscar', onPressed: _search),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: _body(sc)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _body(ScrollController sc) {
+    if (_loading) return const AppLoader();
+    if (_error != null) {
+      return StateMessage(
+        icon: Icons.wifi_off,
+        title: _error!,
+        action: PrimaryButton(label: 'Reintentar', icon: Icons.refresh, onPressed: _search),
+      );
+    }
+    if (!_searched) {
+      return const StateMessage(
+        icon: Icons.travel_explore,
+        title: 'Busca una receta',
+        subtitle: 'Escribe un ingrediente o plato y pulsa Buscar.',
+      );
+    }
+    if (_results.isEmpty) {
+      return const StateMessage(
+        icon: Icons.search_off,
+        title: 'Sin resultados',
+        subtitle: 'Prueba con otro término (en inglés funciona mejor).',
+      );
+    }
+    return ListView.builder(
+      controller: sc,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      itemCount: _results.length,
+      itemBuilder: (_, i) {
+        final r = _results[i];
+        return AppCard(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          onTap: () => showRecipeDetail(context, r, onSave: () => widget.onSave(r)),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.title,
+                        style: const TextStyle(color: AppColors.textHi, fontSize: 14.5, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    Text('${r.category} · ${r.ingredients.length} ingredientes',
+                        style: const TextStyle(color: AppColors.textLo, fontSize: 12)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.textLo),
+            ],
+          ),
+        );
+      },
     );
   }
 }

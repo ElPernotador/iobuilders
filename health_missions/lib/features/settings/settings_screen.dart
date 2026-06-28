@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/models/app_settings.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import 'manage_items_screen.dart';
 import 'settings_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -66,6 +67,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             (v) => provider.update(AppSettings.fromMap({...s.toMap(), 'saturdayReminderEnabled': v ? 1 : 0}))),
                         _SwitchTile('Recordatorio peso dominical', s.weeklyWeightReminderEnabled,
                             (v) => provider.update(AppSettings.fromMap({...s.toMap(), 'weeklyWeightReminderEnabled': v ? 1 : 0}))),
+                      ]),
+                      Gap.xl,
+                      const SectionLabel('Personalización'),
+                      _Group(children: [
+                        _ActionTile(Icons.tune, 'Mis ítems personalizados', AppColors.primary,
+                            () => Navigator.of(ctx).push(MaterialPageRoute(
+                                builder: (_) => const ManageItemsScreen()))),
                       ]),
                       Gap.xl,
                       const SectionLabel('Datos'),
