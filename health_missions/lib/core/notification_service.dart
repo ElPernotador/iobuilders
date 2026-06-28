@@ -84,6 +84,8 @@ class NotificationService {
       scheduled,
       NotificationDetails(android: _androidDetails),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       payload: 'screen:meals',
     );
   }
@@ -98,6 +100,8 @@ class NotificationService {
       next,
       NotificationDetails(android: _androidDetails),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       payload: 'screen:shopping',
     );
@@ -113,6 +117,8 @@ class NotificationService {
       next,
       NotificationDetails(android: _androidDetails),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       payload: 'screen:progress',
     );

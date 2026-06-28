@@ -63,14 +63,14 @@ class ProgressProvider extends ChangeNotifier {
   int get strengthSessionsLast7Days {
     final cutoff = AppDateUtils.toDateString(DateTime.now().subtract(const Duration(days: 7)));
     return _workoutLogs
-        .where((l) => l.date >= cutoff && l.workoutType.startsWith('strength') && l.completed)
+        .where((l) => l.date.compareTo(cutoff) >= 0 && l.workoutType.startsWith('strength') && l.completed)
         .length;
   }
 
   int get bicycleMinutesLast7Days {
     final cutoff = AppDateUtils.toDateString(DateTime.now().subtract(const Duration(days: 7)));
     return _workoutLogs
-        .where((l) => l.date >= cutoff && l.workoutType == 'bicycle' && l.completed)
+        .where((l) => l.date.compareTo(cutoff) >= 0 && l.workoutType == 'bicycle' && l.completed)
         .fold(0, (sum, l) => sum + (l.durationMinutes ?? 0));
   }
 
