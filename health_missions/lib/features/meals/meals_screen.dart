@@ -842,9 +842,17 @@ class _InternetSearchSheet extends StatefulWidget {
 class _InternetSearchSheetState extends State<_InternetSearchSheet> {
   final _ctrl = TextEditingController();
   bool _loading = false;
+  bool _opening = false; // looking up a stub's full details
   String? _error;
   List<Recipe> _results = [];
-  bool _searched = false;
+  String _activeCategory = 'Chicken';
+
+  @override
+  void initState() {
+    super.initState();
+    // Never start empty: show a category immediately.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _browse(_activeCategory));
+  }
 
   @override
   void dispose() {
@@ -852,17 +860,13 @@ class _InternetSearchSheetState extends State<_InternetSearchSheet> {
     super.dispose();
   }
 
-  Future<void> _search() async {
-    final q = _ctrl.text.trim();
-    if (q.isEmpty) return;
-    FocusScope.of(context).unfocus();
+  Future<void> _run(Future<List<Recipe>> Function() op) async {
     setState(() {
       _loading = true;
       _error = null;
-      _searched = true;
     });
     try {
-      final results = await MealDbService.searchByName(q);
+      final results = await op();
       if (!mounted) return;
       setState(() {
         _results = results;
@@ -871,9 +875,50 @@ class _InternetSearchSheetState extends State<_InternetSearchSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Sin conexión o error al buscar. Inténtalo de nuevo.';
+        _error = 'No se pudo conectar. $e';
         _loading = false;
       });
+    }
+  }
+
+  void _browse(String category) {
+    setState(() => _activeCategory = category);
+    _ctrl.clear();
+    _run(() => MealDbService.browseByCategory(category));
+  }
+
+  void _search() {
+    final q = _ctrl.text.trim();
+    if (q.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _activeCategory = '');
+    _run(() => MealDbService.searchByName(q));
+  }
+
+  Future<void> _open(Recipe r) async {
+    // Stubs (from browse / ingredient filter) need a lookup for full details.
+    if (!MealDbService.isStub(r)) {
+      showRecipeDetail(context, r, onSave: () => widget.onSave(r));
+      return;
+    }
+    setState(() => _opening = true);
+    try {
+      final full = await MealDbService.lookupById(r.id);
+      if (!mounted) return;
+      setState(() => _opening = false);
+      if (full != null) {
+        showRecipeDetail(context, full, onSave: () => widget.onSave(full));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo cargar la receta')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _opening = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar: $e')),
+      );
     }
   }
 
@@ -883,7 +928,7 @@ class _InternetSearchSheetState extends State<_InternetSearchSheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.85,
+        initialChildSize: 0.9,
         maxChildSize: 0.95,
         builder: (_, sc) => Column(
           children: [
@@ -894,10 +939,10 @@ class _InternetSearchSheetState extends State<_InternetSearchSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Buscar recetas en internet',
+                  const Text('Recetas de internet',
                       style: TextStyle(color: AppColors.textHi, fontSize: 19, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 4),
-                  const Text('Fuente: TheMealDB · suele estar en inglés',
+                  const Text('Toca una categoría o busca (ej: pollo, salmón).',
                       style: TextStyle(color: AppColors.textLo, fontSize: 12)),
                   const SizedBox(height: 12),
                   Row(
@@ -905,13 +950,12 @@ class _InternetSearchSheetState extends State<_InternetSearchSheet> {
                       Expanded(
                         child: TextField(
                           controller: _ctrl,
-                          autofocus: true,
                           style: const TextStyle(color: AppColors.textHi),
                           cursorColor: AppColors.primary,
                           textInputAction: TextInputAction.search,
                           onSubmitted: (_) => _search(),
                           decoration: InputDecoration(
-                            hintText: 'Ej: chicken, salmon, omelette…',
+                            hintText: 'Buscar plato o ingrediente…',
                             hintStyle: const TextStyle(color: AppColors.textLo),
                             prefixIcon: const Icon(Icons.search, color: AppColors.textMid),
                             filled: true,
@@ -924,11 +968,37 @@ class _InternetSearchSheetState extends State<_InternetSearchSheet> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      SizedBox(
-                        height: 52,
-                        child: PrimaryButton(label: 'Buscar', onPressed: _search),
-                      ),
+                      SizedBox(height: 52, child: PrimaryButton(label: 'Buscar', onPressed: _search)),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 34,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: MealDbService.categories.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (_, i) {
+                        final c = MealDbService.categories[i];
+                        final on = c == _activeCategory;
+                        return GestureDetector(
+                          onTap: () => _browse(c),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: on ? AppColors.primary : AppColors.surfaceAlt,
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                            ),
+                            child: Text(_catLabel(c),
+                                style: TextStyle(
+                                    color: on ? const Color(0xFF06251A) : AppColors.textMid,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -940,58 +1010,78 @@ class _InternetSearchSheetState extends State<_InternetSearchSheet> {
     );
   }
 
+  String _catLabel(String c) {
+    const es = {
+      'Chicken': 'Pollo', 'Beef': 'Carne', 'Seafood': 'Mariscos',
+      'Pasta': 'Pasta', 'Vegetarian': 'Vegetariano', 'Breakfast': 'Desayuno',
+      'Dessert': 'Postre',
+    };
+    return es[c] ?? c;
+  }
+
   Widget _body(ScrollController sc) {
     if (_loading) return const AppLoader();
     if (_error != null) {
       return StateMessage(
         icon: Icons.wifi_off,
-        title: _error!,
-        action: PrimaryButton(label: 'Reintentar', icon: Icons.refresh, onPressed: _search),
-      );
-    }
-    if (!_searched) {
-      return const StateMessage(
-        icon: Icons.travel_explore,
-        title: 'Busca una receta',
-        subtitle: 'Escribe un ingrediente o plato y pulsa Buscar.',
+        title: 'Sin conexión',
+        subtitle: _error,
+        action: PrimaryButton(
+            label: 'Reintentar',
+            icon: Icons.refresh,
+            onPressed: () => _activeCategory.isEmpty ? _search() : _browse(_activeCategory)),
       );
     }
     if (_results.isEmpty) {
-      return const StateMessage(
+      return StateMessage(
         icon: Icons.search_off,
         title: 'Sin resultados',
-        subtitle: 'Prueba con otro término (en inglés funciona mejor).',
+        subtitle: 'Prueba otra palabra o toca una categoría de arriba.',
+        action: PrimaryButton(
+            label: 'Ver pollo', icon: Icons.restaurant, onPressed: () => _browse('Chicken')),
       );
     }
-    return ListView.builder(
-      controller: sc,
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      itemCount: _results.length,
-      itemBuilder: (_, i) {
-        final r = _results[i];
-        return AppCard(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          onTap: () => showRecipeDetail(context, r, onSave: () => widget.onSave(r)),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(r.title,
-                        style: const TextStyle(color: AppColors.textHi, fontSize: 14.5, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 4),
-                    Text('${r.category} · ${r.ingredients.length} ingredientes',
-                        style: const TextStyle(color: AppColors.textLo, fontSize: 12)),
-                  ],
-                ),
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: sc,
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+          itemCount: _results.length,
+          itemBuilder: (_, i) {
+            final r = _results[i];
+            final stub = MealDbService.isStub(r);
+            return AppCard(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              onTap: () => _open(r),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(r.title,
+                            style: const TextStyle(color: AppColors.textHi, fontSize: 14.5, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(stub ? 'Toca para ver la receta' : '${r.category} · ${r.ingredients.length} ingredientes',
+                            style: const TextStyle(color: AppColors.textLo, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: AppColors.textLo),
+                ],
               ),
-              const Icon(Icons.chevron_right, color: AppColors.textLo),
-            ],
+            );
+          },
+        ),
+        if (_opening)
+          Positioned.fill(
+            child: Container(
+              color: Colors.black54,
+              child: const AppLoader(),
+            ),
           ),
-        );
-      },
+      ],
     );
   }
 }
