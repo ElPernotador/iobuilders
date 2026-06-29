@@ -11,21 +11,33 @@ class ProgressProvider extends ChangeNotifier {
   List<WorkoutLog> _workoutLogs = [];
   bool _loading = true;
 
+  DateTime _date = DateTime.now();
+
   List<BodyMetric> get metrics => _metrics;
   List<DailyCheck> get recentChecks => _recentChecks;
   bool get loading => _loading;
+  DateTime get selectedDate => _date;
+  String get selectedString => AppDateUtils.toDateString(_date);
 
   BodyMetric? get latestMetric => _metrics.isNotEmpty ? _metrics.last : null;
 
-  Future<void> load() async {
+  /// Body metric registered exactly on the selected day, if any.
+  BodyMetric? get metricForSelectedDay {
+    for (final m in _metrics) {
+      if (m.date == selectedString) return m;
+    }
+    return null;
+  }
+
+  Future<void> load([DateTime? date]) async {
     _loading = true;
+    _date = date ?? DateTime.now();
     notifyListeners();
 
     _metrics = await StorageService.getMetrics();
 
-    final now = DateTime.now();
-    final from = AppDateUtils.toDateString(now.subtract(const Duration(days: 90)));
-    final to = AppDateUtils.todayString();
+    final from = AppDateUtils.toDateString(_date.subtract(const Duration(days: 90)));
+    final to = selectedString;
     _recentChecks = await StorageService.getChecksRange(from, to);
     _workoutLogs = await StorageService.getWorkoutLogs(from, to);
 
@@ -61,14 +73,14 @@ class ProgressProvider extends ChangeNotifier {
   }
 
   int get strengthSessionsLast7Days {
-    final cutoff = AppDateUtils.toDateString(DateTime.now().subtract(const Duration(days: 7)));
+    final cutoff = AppDateUtils.toDateString(_date.subtract(const Duration(days: 7)));
     return _workoutLogs
         .where((l) => l.date.compareTo(cutoff) >= 0 && l.workoutType.startsWith('strength') && l.completed)
         .length;
   }
 
   int get bicycleMinutesLast7Days {
-    final cutoff = AppDateUtils.toDateString(DateTime.now().subtract(const Duration(days: 7)));
+    final cutoff = AppDateUtils.toDateString(_date.subtract(const Duration(days: 7)));
     return _workoutLogs
         .where((l) => l.date.compareTo(cutoff) >= 0 && l.workoutType == 'bicycle' && l.completed)
         .fold(0, (sum, l) => sum + (l.durationMinutes ?? 0));

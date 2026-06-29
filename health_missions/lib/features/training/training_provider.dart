@@ -16,6 +16,10 @@ class TrainingProvider extends ChangeNotifier {
   int _kneePain = 0;
   int _abdomenBloating = 0;
   String _trainingType = 'rest';
+  DateTime _date = DateTime.now();
+
+  List<Exercise> _customExercises = [];
+  Set<String> _hidden = {};
 
   Workout? get todayWorkout => _todayWorkout;
   List<Exercise> get exercises => _filteredExercises;
@@ -28,25 +32,33 @@ class TrainingProvider extends ChangeNotifier {
   int get abdomenBloating => _abdomenBloating;
   bool get morningMissionDone => _check?.morningMissionDone ?? false;
   bool get mobilityDone => _check?.mobility ?? false;
+  String get _dateStr => AppDateUtils.toDateString(_date);
 
-  Future<void> load() async {
+  /// True for custom (user-added) exercises (id prefixed 'cx_').
+  bool isCustomExercise(Exercise e) => e.id.startsWith('cx_');
+
+  Future<void> load([DateTime? date]) async {
     _loading = true;
     _error = null;
+    _date = date ?? DateTime.now();
     notifyListeners();
 
     try {
-      final today = DateTime.now();
-      final dateStr = AppDateUtils.todayString();
-      _trainingType = AppDateUtils.trainingTypeForDay(today);
+      _trainingType = AppDateUtils.trainingTypeForDay(_date);
 
-      _check = await StorageService.getTodayCheck(dateStr);
+      _check = await StorageService.getTodayCheck(_dateStr);
       _shoulderPain = _check!.shoulderPain ?? 0;
       _kneePain = _check!.kneePain ?? 0;
       _abdomenBloating = _check!.abdomenBloating ?? 0;
 
+      _hidden = await StorageService.getHiddenExercises();
+      _customExercises = _trainingType.startsWith('strength')
+          ? await StorageService.getCustomExercises(_trainingType)
+          : [];
+
       _refilter();
 
-      _todayLog = await StorageService.getWorkoutLogForDate(dateStr);
+      _todayLog = await StorageService.getWorkoutLogForDate(_dateStr);
     } catch (e) {
       _error = 'No se pudo cargar el entrenamiento';
     } finally {
@@ -55,17 +67,53 @@ class TrainingProvider extends ChangeNotifier {
     }
   }
 
+  /// Seed exercises (minus hidden) + custom exercises, then pain filter.
   void _refilter() {
     _todayWorkout = getWorkoutForType(_trainingType);
-    if (_todayWorkout != null) {
-      _filteredExercises = filterExercisesForPain(
-        exercises: _todayWorkout!.exercises,
-        shoulderPain: _shoulderPain,
-        kneePain: _kneePain,
-      );
-    } else {
+    if (_todayWorkout == null) {
       _filteredExercises = [];
+      return;
     }
+    final merged = <Exercise>[
+      ..._todayWorkout!.exercises.where((e) => !_hidden.contains(e.id)),
+      ..._customExercises,
+    ];
+    _mergedCount = merged.length;
+    _filteredExercises = filterExercisesForPain(
+      exercises: merged,
+      shoulderPain: _shoulderPain,
+      kneePain: _kneePain,
+    );
+  }
+
+  int _mergedCount = 0;
+
+  // --- Editing the routine ---
+  Future<void> addExercise(String name, int sets, String reps) async {
+    final n = name.trim();
+    if (n.isEmpty || !_trainingType.startsWith('strength')) return;
+    await StorageService.addCustomExercise(
+      workoutType: _trainingType,
+      name: n,
+      sets: sets,
+      reps: reps,
+    );
+    _customExercises = await StorageService.getCustomExercises(_trainingType);
+    _refilter();
+    notifyListeners();
+  }
+
+  /// Removes an exercise: deletes custom ones, hides seed ones.
+  Future<void> removeExercise(Exercise e) async {
+    if (isCustomExercise(e)) {
+      await StorageService.deleteCustomExercise(e.id);
+      _customExercises = await StorageService.getCustomExercises(_trainingType);
+    } else {
+      await StorageService.setExerciseHidden(e.id, true);
+      _hidden = await StorageService.getHiddenExercises();
+    }
+    _refilter();
+    notifyListeners();
   }
 
   /// Update today's pain levels (also re-adapts the exercise list).
@@ -99,15 +147,14 @@ class TrainingProvider extends ChangeNotifier {
   }
 
   /// How many exercises were hidden by the pain filter.
-  int get hiddenByPain =>
-      (_todayWorkout?.exercises.length ?? 0) - _filteredExercises.length;
+  int get hiddenByPain => _mergedCount - _filteredExercises.length;
 
   bool isExerciseCompleted(String exerciseId) {
     return _todayLog?.completedExerciseIds.contains(exerciseId) ?? false;
   }
 
   Future<void> toggleExercise(String exerciseId) async {
-    final dateStr = AppDateUtils.todayString();
+    final dateStr = _dateStr;
     final current = List<String>.from(_todayLog?.completedExerciseIds ?? []);
     if (current.contains(exerciseId)) {
       current.remove(exerciseId);
@@ -129,7 +176,7 @@ class TrainingProvider extends ChangeNotifier {
 
   Future<void> markCompleted({int? durationMinutes, int? effort}) async {
     if (_todayWorkout == null && _trainingType != 'bicycle') return;
-    final dateStr = AppDateUtils.todayString();
+    final dateStr = _dateStr;
     final log = WorkoutLog(
       id: _todayLog?.id,
       date: dateStr,
@@ -161,7 +208,7 @@ class TrainingProvider extends ChangeNotifier {
   }
 
   Future<void> reportTooMuchPain() async {
-    final dateStr = AppDateUtils.todayString();
+    final dateStr = _dateStr;
     final log = WorkoutLog(
       id: _todayLog?.id,
       date: dateStr,

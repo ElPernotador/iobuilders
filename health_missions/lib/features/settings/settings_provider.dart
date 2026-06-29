@@ -37,11 +37,13 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   Future<void> _rescheduleNotifications() async {
-    if (!_settings.saturdayReminderEnabled) {
-      await NotificationService.cancel(NotificationService.idSaturdayMarket);
+    if (!_settings.saturdayReminderEnabled || _settings.shoppingDays.isEmpty) {
+      await NotificationService.cancelShoppingReminders();
     } else {
-      await NotificationService.scheduleSaturdayMarket(
-          TimeOfDay(hour: 10, minute: 0));
+      await NotificationService.scheduleShoppingReminders(
+        _settings.shoppingDays,
+        TimeOfDay(hour: _settings.shoppingHour, minute: _settings.shoppingMinute),
+      );
     }
     if (_settings.weeklyWeightReminderEnabled) {
       await NotificationService.scheduleWeeklySundayWeight(

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/date_utils.dart';
-import '../../core/models/app_settings.dart';
 import '../../core/models/recipe.dart';
-import '../../core/notification_service.dart';
 import '../../core/storage_service.dart';
 import '../../data/seed_shopping.dart';
 
@@ -73,13 +71,5 @@ class ShoppingProvider extends ChangeNotifier {
       buf.writeln();
     }
     return buf.toString().trim();
-  }
-
-  Future<void> scheduleSaturdayReminder(AppSettings settings) async {
-    if (!settings.saturdayReminderEnabled) {
-      await NotificationService.cancel(NotificationService.idSaturdayMarket);
-      return;
-    }
-    await NotificationService.scheduleSaturdayMarket(const TimeOfDay(hour: 10, minute: 0));
   }
 }

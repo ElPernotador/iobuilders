@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/nav_controller.dart';
+import 'core/selected_date_controller.dart';
 import 'core/theme.dart';
 import 'features/meals/meals_provider.dart';
 import 'features/meals/meals_screen.dart';
@@ -23,6 +24,7 @@ class HealthMissionsApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => NavController()),
+        ChangeNotifierProvider(create: (_) => SelectedDateController()),
         ChangeNotifierProvider(create: (_) => TodayProvider()),
         ChangeNotifierProvider(create: (_) => MealsProvider()),
         ChangeNotifierProvider(create: (_) => TrainingProvider()),

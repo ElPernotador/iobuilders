@@ -90,21 +90,40 @@ class NotificationService {
     );
   }
 
-  static Future<void> scheduleSaturdayMarket(TimeOfDay time) async {
+  // Shopping reminders use ids idShoppingBase+weekday (41..47).
+  static const int idShoppingBase = 40;
+
+  /// Schedules a recurring shopping reminder for each chosen weekday
+  /// (1=Mon..7=Sun). Cancels any previous shopping reminders first.
+  static Future<void> scheduleShoppingReminders(
+      Set<int> weekdays, TimeOfDay time) async {
+    for (var wd = 1; wd <= 7; wd++) {
+      await _plugin.cancel(idShoppingBase + wd);
+    }
     final now = tz.TZDateTime.now(tz.local);
-    var next = _nextWeekday(now, DateTime.saturday, time.hour, time.minute);
-    await _plugin.zonedSchedule(
-      idSaturdayMarket,
-      'Feria del sábado',
-      'Compra fruta y verduras para 4-5 días',
-      next,
-      NotificationDetails(android: _androidDetails),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-      payload: 'screen:shopping',
-    );
+    for (final wd in weekdays) {
+      if (wd < 1 || wd > 7) continue;
+      final next = _nextWeekday(now, wd, time.hour, time.minute);
+      await _plugin.zonedSchedule(
+        idShoppingBase + wd,
+        'Día de compra',
+        'Hoy toca comprar fruta, verdura y proteína',
+        next,
+        NotificationDetails(android: _androidDetails),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        payload: 'screen:shopping',
+      );
+    }
+  }
+
+  static Future<void> cancelShoppingReminders() async {
+    await _plugin.cancel(idSaturdayMarket);
+    for (var wd = 1; wd <= 7; wd++) {
+      await _plugin.cancel(idShoppingBase + wd);
+    }
   }
 
   static Future<void> scheduleWeeklySundayWeight(TimeOfDay time) async {

@@ -27,14 +27,18 @@ class StorageService {
     final path = join(dbPath, 'health_missions.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onUpgrade: (db, oldV, newV) async {
         if (oldV < 2) {
           await _createV2Tables(db);
         }
+        if (oldV < 3) {
+          await _createV3Tables(db);
+        }
       },
       onCreate: (db, version) async {
         await _createV2Tables(db);
+        await _createV3Tables(db);
         await db.execute('''
           CREATE TABLE daily_checks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,6 +155,92 @@ class StorageService {
         tags TEXT
       )
     ''');
+  }
+
+  /// Tables added in schema v3: user-editable workouts.
+  static Future<void> _createV3Tables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS custom_exercises (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workoutType TEXT NOT NULL,
+        name TEXT NOT NULL,
+        sets INTEGER DEFAULT 3,
+        reps TEXT DEFAULT '10',
+        restSeconds INTEGER DEFAULT 60,
+        instructions TEXT DEFAULT '',
+        sortOrder INTEGER DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS exercise_prefs (
+        exerciseId TEXT PRIMARY KEY,
+        hidden INTEGER DEFAULT 0
+      )
+    ''');
+  }
+
+  // --- Custom exercises (user-editable workouts) ---
+  static Future<List<Exercise>> getCustomExercises(String workoutType) async {
+    final database = await db;
+    final rows = await database.query('custom_exercises',
+        where: 'workoutType = ?', whereArgs: [workoutType], orderBy: 'sortOrder ASC, id ASC');
+    return rows
+        .map((m) => Exercise(
+              id: 'cx_${m['id']}',
+              name: m['name'] as String,
+              sets: (m['sets'] as int?) ?? 3,
+              reps: (m['reps'] as String?) ?? '10',
+              restSeconds: (m['restSeconds'] as int?) ?? 60,
+              instructions: (m['instructions'] as String?) ?? '',
+              safetyNote: '',
+              easierVariant: '',
+              harderVariant: '',
+              tags: const ['custom', 'shoulder_safe', 'knee_safe'],
+            ))
+        .toList();
+  }
+
+  static Future<void> addCustomExercise({
+    required String workoutType,
+    required String name,
+    required int sets,
+    required String reps,
+    int restSeconds = 60,
+    String instructions = '',
+  }) async {
+    final database = await db;
+    await database.insert('custom_exercises', {
+      'workoutType': workoutType,
+      'name': name,
+      'sets': sets,
+      'reps': reps,
+      'restSeconds': restSeconds,
+      'instructions': instructions,
+      'sortOrder': 0,
+    });
+  }
+
+  /// Deletes a custom exercise. [exerciseId] is the 'cx_<id>' form.
+  static Future<void> deleteCustomExercise(String exerciseId) async {
+    final database = await db;
+    final raw = int.tryParse(exerciseId.replaceFirst('cx_', ''));
+    if (raw == null) return;
+    await database.delete('custom_exercises', where: 'id = ?', whereArgs: [raw]);
+  }
+
+  static Future<Set<String>> getHiddenExercises() async {
+    final database = await db;
+    final rows = await database.query('exercise_prefs', where: 'hidden = 1');
+    return rows.map((r) => r['exerciseId'] as String).toSet();
+  }
+
+  static Future<void> setExerciseHidden(String exerciseId, bool hidden) async {
+    final database = await db;
+    await database.insert(
+      'exercise_prefs',
+      {'exerciseId': exerciseId, 'hidden': hidden ? 1 : 0},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   // --- Custom items (user-defined trackables) ---

@@ -63,10 +63,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ]),
                       Gap.m,
                       _Group(children: [
-                        _SwitchTile('Recordatorio feria sábado', s.saturdayReminderEnabled,
-                            (v) => provider.update(AppSettings.fromMap({...s.toMap(), 'saturdayReminderEnabled': v ? 1 : 0}))),
                         _SwitchTile('Recordatorio peso dominical', s.weeklyWeightReminderEnabled,
                             (v) => provider.update(AppSettings.fromMap({...s.toMap(), 'weeklyWeightReminderEnabled': v ? 1 : 0}))),
+                      ]),
+                      Gap.xl,
+                      const SectionLabel('Días de compra'),
+                      _Group(children: [
+                        _SwitchTile('Recordatorio de compras', s.saturdayReminderEnabled,
+                            (v) => provider.update(AppSettings.fromMap({...s.toMap(), 'saturdayReminderEnabled': v ? 1 : 0}))),
+                        if (s.saturdayReminderEnabled) ...[
+                          _WeekdayPicker(
+                            selected: s.shoppingDays,
+                            onChanged: (days) => provider.update(AppSettings.fromMap(
+                                {...s.toMap(), 'shoppingDays': (days.toList()..sort()).join(',')})),
+                          ),
+                          _TimeTile('Hora del aviso', s.shoppingHour, s.shoppingMinute,
+                              (h, m) => provider.update(AppSettings.fromMap(
+                                  {...s.toMap(), 'shoppingHour': h, 'shoppingMinute': m}))),
+                        ],
                       ]),
                       Gap.xl,
                       const SectionLabel('Personalización'),
@@ -151,6 +165,52 @@ class _Group extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _WeekdayPicker extends StatelessWidget {
+  final Set<int> selected;
+  final ValueChanged<Set<int>> onChanged;
+  const _WeekdayPicker({required this.selected, required this.onChanged});
+
+  static const _labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D']; // Mon..Sun
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: List.generate(7, (i) {
+          final wd = i + 1; // 1=Mon..7=Sun
+          final on = selected.contains(wd);
+          return GestureDetector(
+            onTap: () {
+              final next = {...selected};
+              if (on) {
+                next.remove(wd);
+              } else {
+                next.add(wd);
+              }
+              onChanged(next);
+            },
+            child: Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: on ? AppColors.primary : AppColors.surfaceAlt,
+                shape: BoxShape.circle,
+              ),
+              child: Text(_labels[i],
+                  style: TextStyle(
+                      color: on ? const Color(0xFF06251A) : AppColors.textMid,
+                      fontWeight: FontWeight.w800)),
+            ),
+          );
+        }),
       ),
     );
   }

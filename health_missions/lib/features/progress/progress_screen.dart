@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/date_utils.dart';
 import '../../core/models/body_metric.dart';
+import '../../core/selected_date_controller.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import 'progress_provider.dart';
@@ -17,12 +18,33 @@ class ProgressScreen extends StatefulWidget {
 }
 
 class _ProgressScreenState extends State<ProgressScreen> {
+  SelectedDateController? _dateCtrl;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ProgressProvider>().load();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+  }
+
+  void _reload() {
+    if (!mounted) return;
+    context.read<ProgressProvider>().load(context.read<SelectedDateController>().selected);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final dateCtrl = context.read<SelectedDateController>();
+    if (dateCtrl != _dateCtrl) {
+      _dateCtrl?.removeListener(_reload);
+      _dateCtrl = dateCtrl..addListener(_reload);
+    }
+  }
+
+  @override
+  void dispose() {
+    _dateCtrl?.removeListener(_reload);
+    super.dispose();
   }
 
   @override
@@ -30,6 +52,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return Consumer<ProgressProvider>(
       builder: (ctx, provider, _) {
         if (provider.loading) return const AppLoader();
+        final dateCtrl = ctx.watch<SelectedDateController>();
         return Scaffold(
           backgroundColor: AppColors.bg,
           body: CustomScrollView(
@@ -39,14 +62,23 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 actions: [
                   IconButton(
                     icon: const Icon(Icons.add, color: AppColors.textHi),
-                    tooltip: 'Registrar medidas',
+                    tooltip: 'Registrar medidas del día',
                     onPressed: () => _showAddMetric(ctx, provider),
                   ),
                 ],
               ),
               SliverToBoxAdapter(
+                child: DateBar(
+                  date: dateCtrl.selected,
+                  isToday: dateCtrl.isToday,
+                  onShift: (d) => dateCtrl.shift(d),
+                  onToday: dateCtrl.today,
+                  onPick: dateCtrl.setDate,
+                ),
+              ),
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -72,7 +104,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       const SizedBox(height: 16),
                       _WeeklyTrainingCard(provider: provider),
                       const SizedBox(height: 16),
-                      _HeatmapCard(heatmap: provider.habitHeatmap),
+                      _HeatmapCard(heatmap: provider.habitHeatmap, endDate: provider.selectedDate),
                       const SizedBox(height: 32),
                     ],
                   ),
@@ -186,7 +218,7 @@ class _AddMetricSheetState extends State<_AddMetricSheet> {
                 final waist = double.tryParse(_waistCtrl.text.replaceAll(',', '.'));
                 Navigator.pop(context);
                 widget.provider.addMetric(BodyMetric(
-                  date: AppDateUtils.todayString(),
+                  date: widget.provider.selectedString,
                   weight: weight,
                   waist: waist,
                   frontPhotoPath: _frontPath,
@@ -626,14 +658,15 @@ class _WeeklyTrainingCard extends StatelessWidget {
 
 class _HeatmapCard extends StatelessWidget {
   final Map<String, int> heatmap;
-  const _HeatmapCard({required this.heatmap});
+  final DateTime endDate;
+  const _HeatmapCard({required this.heatmap, required this.endDate});
 
   @override
   Widget build(BuildContext context) {
     if (heatmap.isEmpty) return const SizedBox.shrink();
 
     final last30 = List.generate(30, (i) {
-      final d = DateTime.now().subtract(Duration(days: 29 - i));
+      final d = endDate.subtract(Duration(days: 29 - i));
       final key = AppDateUtils.toDateString(d);
       return MapEntry(key, heatmap[key] ?? 0);
     });

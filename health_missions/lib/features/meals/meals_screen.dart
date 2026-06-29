@@ -91,24 +91,30 @@ class _MealsScreenState extends State<MealsScreen> {
                       Gap.xl,
                       SectionLabel(
                         'Todas las recetas · ${all.length}',
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _HeaderAction(
-                              icon: Icons.travel_explore,
-                              label: 'Internet',
-                              onTap: () => _showInternetSearch(ctx, provider),
-                            ),
-                            const SizedBox(width: 14),
-                            _HeaderAction(
-                              icon: Icons.add_circle,
-                              label: 'Crear',
-                              onTap: () => _showRecipeForm(ctx, provider),
-                            ),
-                          ],
+                        trailing: _HeaderAction(
+                          icon: Icons.add_circle,
+                          label: 'Crear',
+                          onTap: () => _showRecipeForm(ctx, provider),
                         ),
                       ),
                       Gap.s,
+                      AppCard(
+                        onTap: () => _showInternetSearch(ctx, provider),
+                        gradient: AppColors.blueGradient,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.travel_explore, color: Colors.white, size: 22),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text('Buscar recetas nuevas en internet',
+                                  style: TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700)),
+                            ),
+                            const Icon(Icons.arrow_forward, color: Colors.white, size: 18),
+                          ],
+                        ),
+                      ),
+                      Gap.m,
                       _SearchField(onChanged: (v) => setState(() => _query = v)),
                       Gap.m,
                       ...filtered.map((r) {
@@ -224,8 +230,9 @@ class _MealsScreenState extends State<MealsScreen> {
       builder: (_) => _InternetSearchSheet(
         onSave: (recipe) {
           provider.addCustomRecipe(recipe);
+          if (mounted) setState(() => _query = ''); // clear filter so it shows
           ScaffoldMessenger.of(ctx).showSnackBar(
-            const SnackBar(content: Text('Receta guardada en tus recetas')),
+            SnackBar(content: Text('“${recipe.title}” guardada en tus recetas')),
           );
         },
       ),

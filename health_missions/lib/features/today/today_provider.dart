@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../core/date_utils.dart';
+import '../../core/models/body_metric.dart';
 import '../../core/models/custom_item.dart';
 import '../../core/models/daily_check.dart';
+import '../../core/models/workout.dart';
 import '../../core/storage_service.dart';
 
 class TodayProvider extends ChangeNotifier {
@@ -9,9 +11,17 @@ class TodayProvider extends ChangeNotifier {
   bool _loading = true;
   List<CustomItem> _customItems = [];
   Set<int> _customChecked = {};
+  DateTime _date = DateTime.now();
+
+  // Dashboard summary state.
+  List<BodyMetric> _metrics = [];
+  List<WorkoutLog> _recentLogs = [];
+  int _streak = 0;
 
   DailyCheck? get check => _check;
   bool get loading => _loading;
+  DateTime get date => _date;
+  String get _dateStr => AppDateUtils.toDateString(_date);
 
   List<CustomItem> customItemsFor(String section) =>
       _customItems.where((i) => i.section == section).toList();
@@ -22,15 +32,63 @@ class TodayProvider extends ChangeNotifier {
       (_check?.completionScore ?? 0) + _customChecked.length;
   int get totalCount => 15 + _customItems.length;
 
-  Future<void> loadToday() async {
+  // --- Dashboard summary getters ---
+  double? get latestWeight {
+    final w = _metrics.where((m) => m.weight != null).toList();
+    return w.isEmpty ? null : w.last.weight;
+  }
+
+  double? get weightTrend {
+    final w = _metrics.where((m) => m.weight != null).toList();
+    if (w.length < 2) return null;
+    return w.last.weight! - w.first.weight!;
+  }
+
+  int get strengthSessions7d => _recentLogs
+      .where((l) => l.workoutType.startsWith('strength') && l.completed)
+      .length;
+
+  int get bicycleMinutes7d => _recentLogs
+      .where((l) => l.workoutType == 'bicycle' && l.completed)
+      .fold(0, (s, l) => s + (l.durationMinutes ?? 0));
+
+  int get streak => _streak;
+
+  Future<void> loadToday([DateTime? date]) async {
     _loading = true;
+    _date = date ?? DateTime.now();
     notifyListeners();
-    final date = AppDateUtils.todayString();
-    _check = await StorageService.getTodayCheck(date);
+    final ds = _dateStr;
+    _check = await StorageService.getTodayCheck(ds);
     _customItems = await StorageService.getCustomItems();
-    _customChecked = await StorageService.getCustomChecks(date);
+    _customChecked = await StorageService.getCustomChecks(ds);
+
+    // Summary: metrics (all), workout logs in the 7 days up to selected date,
+    // and a consecutive-day habit streak ending at the selected date.
+    _metrics = await StorageService.getMetrics();
+    final from7 = AppDateUtils.toDateString(_date.subtract(const Duration(days: 7)));
+    _recentLogs = await StorageService.getWorkoutLogs(from7, ds);
+    _streak = await _computeStreak();
+
     _loading = false;
     notifyListeners();
+  }
+
+  /// Consecutive days (ending at the selected date) with at least one habit
+  /// checked.
+  Future<int> _computeStreak() async {
+    final from = AppDateUtils.toDateString(_date.subtract(const Duration(days: 60)));
+    final checks = await StorageService.getChecksRange(from, _dateStr);
+    final byDate = {for (final c in checks) c.date: c.completionScore};
+    var streak = 0;
+    var cursor = _date;
+    while (true) {
+      final score = byDate[AppDateUtils.toDateString(cursor)] ?? 0;
+      if (score <= 0) break;
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    return streak;
   }
 
   Future<void> addCustomItem(String name, String section) async {
@@ -57,7 +115,6 @@ class TodayProvider extends ChangeNotifier {
   }
 
   Future<void> toggleCustomItem(int id) async {
-    final date = AppDateUtils.todayString();
     final next = !_customChecked.contains(id);
     _customChecked = {..._customChecked};
     if (next) {
@@ -65,7 +122,7 @@ class TodayProvider extends ChangeNotifier {
     } else {
       _customChecked.remove(id);
     }
-    await StorageService.setCustomCheck(date, id, next);
+    await StorageService.setCustomCheck(_dateStr, id, next);
     notifyListeners();
   }
 
@@ -123,8 +180,7 @@ class TodayProvider extends ChangeNotifier {
 
   List<String> get priorityMissions {
     if (_check == null) return [];
-    final now = DateTime.now();
-    final dayType = AppDateUtils.trainingTypeForDay(now);
+    final dayType = AppDateUtils.trainingTypeForDay(_date);
     final shoulder = _check!.shoulderPain ?? 0;
     final knee = _check!.kneePain ?? 0;
 

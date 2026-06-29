@@ -340,3 +340,96 @@ class GradientAppBar extends StatelessWidget {
     );
   }
 }
+
+/// Date navigator bar for day-scoped screens: ‹ prev · date (tap to pick) ·
+/// next › with a "Hoy" reset when not on today.
+class DateBar extends StatelessWidget {
+  final DateTime date;
+  final bool isToday;
+  final ValueChanged<int> onShift; // +1 / -1 days
+  final VoidCallback onToday;
+  final ValueChanged<DateTime> onPick;
+
+  const DateBar({
+    super.key,
+    required this.date,
+    required this.isToday,
+    required this.onShift,
+    required this.onToday,
+    required this.onPick,
+  });
+
+  static const _days = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  static const _months = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+  Future<void> _pick(BuildContext context) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: date,
+      firstDate: DateTime(now.year - 1),
+      lastDate: now.add(const Duration(days: 365)),
+      builder: (ctx, child) => Theme(data: ThemeData.dark(), child: child!),
+    );
+    if (picked != null) onPick(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isToday
+        ? 'Hoy · ${_days[date.weekday]} ${date.day}'
+        : '${_days[date.weekday]} ${date.day} ${_months[date.month]}';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left, color: AppColors.textMid),
+            onPressed: () => onShift(-1),
+            tooltip: 'Día anterior',
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _pick(context),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.calendar_today, size: 14, color: AppColors.textMid),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(label,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: AppColors.textHi, fontSize: 14.5, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (!isToday)
+            TextButton(
+              onPressed: onToday,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('Hoy', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
+            ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right, color: AppColors.textMid),
+            onPressed: () => onShift(1),
+            tooltip: 'Día siguiente',
+          ),
+        ],
+      ),
+    );
+  }
+}

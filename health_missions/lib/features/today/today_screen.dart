@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/date_utils.dart';
 import '../../core/models/daily_check.dart';
 import '../../core/nav_controller.dart';
+import '../../core/selected_date_controller.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import 'today_provider.dart';
@@ -28,36 +29,46 @@ class TodayScreen extends StatefulWidget {
 
 class _TodayScreenState extends State<TodayScreen> {
   NavController? _nav;
+  SelectedDateController? _dateCtrl;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<TodayProvider>().loadToday();
+      _reload();
     });
+  }
+
+  void _reload() {
+    if (!mounted) return;
+    context.read<TodayProvider>().loadToday(context.read<SelectedDateController>().selected);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Refresh the dashboard whenever the Hoy tab regains focus, so summaries
-    // reflect edits made in other tabs (e.g. training logged in Entrenamiento).
+    // Refresh the dashboard when the Hoy tab regains focus (reflect edits made
+    // in other tabs) or when the selected date changes.
     final nav = context.read<NavController>();
     if (nav != _nav) {
       _nav?.removeListener(_onNav);
       _nav = nav..addListener(_onNav);
     }
+    final dateCtrl = context.read<SelectedDateController>();
+    if (dateCtrl != _dateCtrl) {
+      _dateCtrl?.removeListener(_reload);
+      _dateCtrl = dateCtrl..addListener(_reload);
+    }
   }
 
   void _onNav() {
-    if (_nav?.index == Tabs.today && mounted) {
-      context.read<TodayProvider>().loadToday();
-    }
+    if (_nav?.index == Tabs.today && mounted) _reload();
   }
 
   @override
   void dispose() {
     _nav?.removeListener(_onNav);
+    _dateCtrl?.removeListener(_reload);
     super.dispose();
   }
 
@@ -75,12 +86,12 @@ class _TodayScreenState extends State<TodayScreen> {
             action: PrimaryButton(
               label: 'Reintentar',
               icon: Icons.refresh,
-              onPressed: () => provider.loadToday(),
+              onPressed: _reload,
             ),
           );
         }
 
-        final today = DateTime.now();
+        final dateCtrl = ctx.watch<SelectedDateController>();
         return Scaffold(
           backgroundColor: AppColors.bg,
           body: CustomScrollView(
@@ -89,18 +100,29 @@ class _TodayScreenState extends State<TodayScreen> {
                 child: _Hero(
                   done: provider.completedCount,
                   total: provider.totalCount,
-                  date: today,
+                  date: provider.date,
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: DateBar(
+                  date: dateCtrl.selected,
+                  isToday: dateCtrl.isToday,
+                  onShift: (d) => dateCtrl.shift(d),
+                  onToday: dateCtrl.today,
+                  onPick: dateCtrl.setDate,
                 ),
               ),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _ResumenCard(provider: provider),
+                      Gap.l,
                       _PriorityMissions(missions: provider.priorityMissions),
                       Gap.l,
-                      _TrainingSummary(check: check),
+                      _TrainingSummary(check: check, date: provider.date),
                       Gap.xl,
                       const SectionLabel('Suplementos'),
                       _CheckGroup(children: [
@@ -139,6 +161,110 @@ class _TodayScreenState extends State<TodayScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+// ─────────────────────────── Resumen (dashboard) ──────────────────────────
+
+class _ResumenCard extends StatelessWidget {
+  final TodayProvider provider;
+  const _ResumenCard({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final weight = provider.latestWeight;
+    final trend = provider.weightTrend;
+    String weightStr = weight != null ? '${weight.toStringAsFixed(1)} kg' : '–';
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionLabel('Resumen', padding: EdgeInsets.only(bottom: 12)),
+          Row(
+            children: [
+              Expanded(
+                child: _StatTile(
+                  icon: Icons.monitor_weight,
+                  value: weightStr,
+                  label: trend != null
+                      ? '${trend > 0 ? '+' : ''}${trend.toStringAsFixed(1)} kg'
+                      : 'Peso',
+                  color: trend != null && trend < 0 ? AppColors.primary : AppColors.blue,
+                  onTap: () => context.read<NavController>().goTo(Tabs.progress),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StatTile(
+                  icon: Icons.fitness_center,
+                  value: '${provider.strengthSessions7d}',
+                  label: 'fuerza 7d',
+                  color: AppColors.blue,
+                  onTap: () => context.read<NavController>().goTo(Tabs.training),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StatTile(
+                  icon: Icons.directions_bike,
+                  value: '${provider.bicycleMinutes7d}',
+                  label: 'min bici 7d',
+                  color: AppColors.primary,
+                  onTap: () => context.read<NavController>().goTo(Tabs.training),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StatTile(
+                  icon: Icons.local_fire_department,
+                  value: '${provider.streak}',
+                  label: 'racha',
+                  color: AppColors.orange,
+                  onTap: () => context.read<NavController>().goTo(Tabs.progress),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _StatTile({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 6),
+          Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.textHi, fontSize: 16, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text(label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.textMid, fontSize: 10.5)),
+        ],
+      ),
     );
   }
 }
@@ -366,11 +492,12 @@ class _CheckRow extends StatelessWidget {
 
 class _TrainingSummary extends StatelessWidget {
   final DailyCheck check;
-  const _TrainingSummary({required this.check});
+  final DateTime date;
+  const _TrainingSummary({required this.check, required this.date});
 
   @override
   Widget build(BuildContext context) {
-    final type = AppDateUtils.trainingTypeForDay(DateTime.now());
+    final type = AppDateUtils.trainingTypeForDay(date);
     final isStrength = type.startsWith('strength');
     final isBike = type == 'bicycle';
     final isRest = type == 'rest';

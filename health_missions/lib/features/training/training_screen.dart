@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/workout.dart';
+import '../../core/selected_date_controller.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import 'training_provider.dart';
@@ -13,13 +14,34 @@ class TrainingScreen extends StatefulWidget {
 
 class _TrainingScreenState extends State<TrainingScreen> {
   bool _sessionStarted = false;
+  bool _editing = false;
+  SelectedDateController? _dateCtrl;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<TrainingProvider>().load();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+  }
+
+  void _reload() {
+    if (!mounted) return;
+    context.read<TrainingProvider>().load(context.read<SelectedDateController>().selected);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final dateCtrl = context.read<SelectedDateController>();
+    if (dateCtrl != _dateCtrl) {
+      _dateCtrl?.removeListener(_reload);
+      _dateCtrl = dateCtrl..addListener(_reload);
+    }
+  }
+
+  @override
+  void dispose() {
+    _dateCtrl?.removeListener(_reload);
+    super.dispose();
   }
 
   @override
@@ -32,10 +54,12 @@ class _TrainingScreenState extends State<TrainingScreen> {
             icon: Icons.cloud_off,
             title: provider.error!,
             action: PrimaryButton(
-                label: 'Reintentar', icon: Icons.refresh, onPressed: () => provider.load()),
+                label: 'Reintentar', icon: Icons.refresh, onPressed: _reload),
           );
         }
 
+        final dateCtrl = ctx.watch<SelectedDateController>();
+        final canEdit = provider.trainingType.startsWith('strength');
         return Scaffold(
           backgroundColor: AppColors.bg,
           body: CustomScrollView(
@@ -44,6 +68,13 @@ class _TrainingScreenState extends State<TrainingScreen> {
                 title: 'Entrenamiento',
                 subtitle: _subtitleFor(provider.trainingType),
                 actions: [
+                  if (canEdit)
+                    IconButton(
+                      icon: Icon(_editing ? Icons.check : Icons.edit_outlined,
+                          color: _editing ? AppColors.primary : AppColors.textMid),
+                      tooltip: _editing ? 'Listo' : 'Editar rutina',
+                      onPressed: () => setState(() => _editing = !_editing),
+                    ),
                   if (provider.todayLog?.completed == true)
                     const Padding(
                       padding: EdgeInsets.only(right: 16),
@@ -52,8 +83,17 @@ class _TrainingScreenState extends State<TrainingScreen> {
                 ],
               ),
               SliverToBoxAdapter(
+                child: DateBar(
+                  date: dateCtrl.selected,
+                  isToday: dateCtrl.isToday,
+                  onShift: (d) => dateCtrl.shift(d),
+                  onToday: dateCtrl.today,
+                  onPick: dateCtrl.setDate,
+                ),
+              ),
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -105,7 +145,15 @@ class _TrainingScreenState extends State<TrainingScreen> {
       );
     }
     if (provider.todayLog?.notes == 'Omitido por dolor') {
-      return _SkippedCard(onReset: () => provider.load());
+      return _SkippedCard(onReset: _reload);
+    }
+
+    if (_editing) {
+      return _EditRoutine(
+        workout: workout,
+        provider: provider,
+        onDone: () => setState(() => _editing = false),
+      );
     }
 
     return Column(
@@ -392,6 +440,184 @@ class _PainSlider extends StatelessWidget {
               style: TextStyle(
                   color: hot ? AppColors.danger : AppColors.textHi,
                   fontWeight: FontWeight.w700)),
+        ),
+      ],
+    );
+  }
+}
+
+// ───────────────────────────── Edit routine ───────────────────────────────
+
+class _EditRoutine extends StatefulWidget {
+  final Workout workout;
+  final TrainingProvider provider;
+  final VoidCallback onDone;
+  const _EditRoutine({required this.workout, required this.provider, required this.onDone});
+  @override
+  State<_EditRoutine> createState() => _EditRoutineState();
+}
+
+class _EditRoutineState extends State<_EditRoutine> {
+  final _name = TextEditingController();
+  final _sets = TextEditingController(text: '3');
+  final _reps = TextEditingController(text: '10-12');
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _sets.dispose();
+    _reps.dispose();
+    super.dispose();
+  }
+
+  void _add() {
+    final n = _name.text.trim();
+    if (n.isEmpty) return;
+    widget.provider.addExercise(n, int.tryParse(_sets.text) ?? 3,
+        _reps.text.trim().isEmpty ? '10' : _reps.text.trim());
+    _name.clear();
+    _sets.text = '3';
+    _reps.text = '10-12';
+    FocusScope.of(context).unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.provider;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppCard(
+          color: AppColors.blueDim,
+          border: Border.all(color: AppColors.blue.withValues(alpha: 0.3)),
+          child: Row(
+            children: [
+              const Icon(Icons.edit, color: AppColors.blue, size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Editando rutina — añade, quita o cambia ejercicios',
+                    style: TextStyle(color: AppColors.textHi, fontSize: 13.5, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ),
+        Gap.l,
+        ...p.exercises.map((e) => AppCard(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(e.name,
+                                  style: const TextStyle(color: AppColors.textHi, fontSize: 14.5, fontWeight: FontWeight.w600)),
+                            ),
+                            if (p.isCustomExercise(e)) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text('Tuyo',
+                                    style: TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.w700)),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text('${e.sets}×${e.reps}',
+                            style: const TextStyle(color: AppColors.textMid, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+                    tooltip: 'Quitar',
+                    onPressed: () => widget.provider.removeExercise(e),
+                  ),
+                ],
+              ),
+            )),
+        Gap.s,
+        const SectionLabel('Añadir ejercicio'),
+        AppCard(
+          child: Column(
+            children: [
+              TextField(
+                controller: _name,
+                style: const TextStyle(color: AppColors.textHi),
+                cursorColor: AppColors.primary,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: 'Nombre del ejercicio',
+                  hintStyle: TextStyle(color: AppColors.textLo),
+                ),
+              ),
+              const Divider(color: AppColors.hairlineSoft),
+              Row(
+                children: [
+                  Expanded(
+                    child: _MiniField(label: 'Series', controller: _sets, number: true),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: _MiniField(label: 'Reps', controller: _reps),
+                  ),
+                  const SizedBox(width: 12),
+                  IconButton.filled(
+                    onPressed: _add,
+                    style: IconButton.styleFrom(backgroundColor: AppColors.primary),
+                    icon: const Icon(Icons.add, color: Color(0xFF06251A)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Gap.l,
+        PrimaryButton(label: 'Listo', icon: Icons.check, onPressed: widget.onDone),
+      ],
+    );
+  }
+}
+
+class _MiniField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final bool number;
+  const _MiniField({required this.label, required this.controller, this.number = false});
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: AppColors.textMid, fontSize: 11)),
+        const SizedBox(height: 4),
+        TextField(
+          controller: controller,
+          keyboardType: number ? TextInputType.number : TextInputType.text,
+          style: const TextStyle(color: AppColors.textHi, fontSize: 14),
+          cursorColor: AppColors.primary,
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: AppColors.surfaceAlt,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+          ),
         ),
       ],
     );
