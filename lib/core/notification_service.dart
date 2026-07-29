@@ -1,0 +1,163 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest.dart' as tz_data;
+
+class NotificationService {
+  static final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
+
+  // Must stay identical to CHANNEL_ID in android/.../NotificationScheduler.kt
+  static const _channelId = 'dieter';
+  static const _channelName = 'Dieter';
+
+  static const int idMorningMission = 1;
+  static const int idLunchReminder = 2;
+  static const int idDinnerReminder = 3;
+  static const int idSaturdayMarket = 4;
+  static const int idWeeklyWeight = 5;
+  static const int idMonthlyMeasure = 6;
+
+  static Future<void> init() async {
+    tz_data.initializeTimeZones();
+
+    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const settings = InitializationSettings(android: android);
+    await _plugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: _onNotificationTap,
+    );
+  }
+
+  static void _onNotificationTap(NotificationResponse response) {
+    // Deep link handled via payload in main.dart
+  }
+
+  static Future<bool> requestPermission() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final granted = await android?.requestNotificationsPermission();
+    return granted ?? false;
+  }
+
+  static Future<bool> areNotificationsEnabled() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    return await android?.areNotificationsEnabled() ?? false;
+  }
+
+  static AndroidNotificationDetails get _androidDetails =>
+      const AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      );
+
+  static Future<void> showMorningMission() async {
+    await _plugin.show(
+      idMorningMission,
+      'Misión de la mañana',
+      '15 minutos de fuerza',
+      NotificationDetails(android: _androidDetails),
+      payload: 'screen:today',
+    );
+  }
+
+  static Future<void> cancelMorningMission() async {
+    await _plugin.cancel(idMorningMission);
+  }
+
+  static Future<void> scheduleMealReminder({
+    required int id,
+    required DateTime when,
+    required String title,
+    required String body,
+  }) async {
+    final scheduled = tz.TZDateTime.from(when, tz.local);
+    if (scheduled.isBefore(tz.TZDateTime.now(tz.local))) return;
+
+    await _plugin.zonedSchedule(
+      id,
+      title,
+      body,
+      scheduled,
+      NotificationDetails(android: _androidDetails),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      payload: 'screen:meals',
+    );
+  }
+
+  // Shopping reminders use ids idShoppingBase+weekday (41..47).
+  static const int idShoppingBase = 40;
+
+  /// Schedules a recurring shopping reminder for each chosen weekday
+  /// (1=Mon..7=Sun). Cancels any previous shopping reminders first.
+  static Future<void> scheduleShoppingReminders(
+      Set<int> weekdays, TimeOfDay time) async {
+    for (var wd = 1; wd <= 7; wd++) {
+      await _plugin.cancel(idShoppingBase + wd);
+    }
+    final now = tz.TZDateTime.now(tz.local);
+    for (final wd in weekdays) {
+      if (wd < 1 || wd > 7) continue;
+      final next = _nextWeekday(now, wd, time.hour, time.minute);
+      await _plugin.zonedSchedule(
+        idShoppingBase + wd,
+        'Día de compra',
+        'Hoy toca comprar fruta, verdura y proteína',
+        next,
+        NotificationDetails(android: _androidDetails),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        payload: 'screen:shopping',
+      );
+    }
+  }
+
+  static Future<void> cancelShoppingReminders() async {
+    await _plugin.cancel(idSaturdayMarket);
+    for (var wd = 1; wd <= 7; wd++) {
+      await _plugin.cancel(idShoppingBase + wd);
+    }
+  }
+
+  static Future<void> scheduleWeeklySundayWeight(TimeOfDay time) async {
+    final now = tz.TZDateTime.now(tz.local);
+    final next = _nextWeekday(now, DateTime.sunday, time.hour, time.minute);
+    await _plugin.zonedSchedule(
+      idWeeklyWeight,
+      'Registro dominical',
+      'Anota tu peso de hoy',
+      next,
+      NotificationDetails(android: _androidDetails),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+      payload: 'screen:progress',
+    );
+  }
+
+  static tz.TZDateTime _nextWeekday(
+      tz.TZDateTime from, int weekday, int hour, int minute) {
+    var dt = tz.TZDateTime(tz.local, from.year, from.month, from.day, hour, minute);
+    while (dt.weekday != weekday || dt.isBefore(from)) {
+      dt = dt.add(const Duration(days: 1));
+    }
+    return dt;
+  }
+
+  static Future<void> cancelAll() async {
+    await _plugin.cancelAll();
+  }
+
+  static Future<void> cancel(int id) async {
+    await _plugin.cancel(id);
+  }
+}
