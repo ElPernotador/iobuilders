@@ -51,12 +51,13 @@ class DailyCheck {
     this.bicycleIntensity,
   });
 
-  int get completionScore {
-    final checks = [
-      whey, creatine, msm, choline, fenugreek, probiotic,
-      fruit, water2L, strength, bicycle, mobility,
-      noBun, noUltraProcessed, proteinTarget, morningMissionDone,
-    ];
+  /// Number of training-linked checks done. The supplement / food habits are no
+  /// longer hardcoded here — they are editable rows (see [CustomItem]) counted
+  /// separately, so this only covers what the Entrenamiento tab writes.
+  static const int trainingScoreMax = 4;
+
+  int get trainingScore {
+    final checks = [morningMissionDone, strength, bicycle, mobility];
     return checks.where((c) => c).length;
   }
 

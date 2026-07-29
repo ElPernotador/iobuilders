@@ -117,20 +117,11 @@ class _MealsScreenState extends State<MealsScreen> {
                       Gap.m,
                       _SearchField(onChanged: (v) => setState(() => _query = v)),
                       Gap.m,
-                      ...filtered.map((r) {
-                        final mine = provider.isCustom(r);
-                        return _RecipeListTile(
-                          recipe: r,
-                          isCustom: mine,
-                          onTap: () => showRecipeDetail(ctx, r,
-                              onDelete: mine
-                                  ? () {
-                                      Navigator.pop(ctx);
-                                      provider.deleteCustomRecipe(r.id);
-                                    }
-                                  : null),
-                        );
-                      }),
+                      ...filtered.map((r) => _RecipeListTile(
+                            recipe: r,
+                            isCustom: provider.isUserCreated(r),
+                            onTap: () => _openRecipe(ctx, provider, r),
+                          )),
                       if (filtered.isEmpty)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 24),
@@ -139,12 +130,48 @@ class _MealsScreenState extends State<MealsScreen> {
                                 style: TextStyle(color: AppColors.textLo)),
                           ),
                         ),
+                      Gap.m,
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            final added = await provider.restoreDefaultRecipes();
+                            if (!ctx.mounted) return;
+                            ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                              content: Text(added == 0
+                                  ? 'Ya tenías todas las recetas por defecto'
+                                  : 'Se restauraron $added receta(s)'),
+                            ));
+                          },
+                          icon: const Icon(Icons.restore, size: 16, color: AppColors.textMid),
+                          label: const Text('Restaurar recetas por defecto',
+                              style: TextStyle(color: AppColors.textMid, fontSize: 13)),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  /// Opens a recipe with edit + delete available (every recipe is editable).
+  void _openRecipe(BuildContext ctx, MealsProvider provider, Recipe r) {
+    showRecipeDetail(
+      ctx,
+      r,
+      onEdit: () {
+        Navigator.pop(ctx);
+        _showRecipeForm(ctx, provider, existing: r);
+      },
+      onDelete: () {
+        Navigator.pop(ctx);
+        provider.deleteCustomRecipe(r.id);
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text('"${r.title}" eliminada')),
         );
       },
     );
@@ -200,7 +227,7 @@ class _MealsScreenState extends State<MealsScreen> {
     );
   }
 
-  void _showRecipeForm(BuildContext ctx, MealsProvider provider) {
+  void _showRecipeForm(BuildContext ctx, MealsProvider provider, {Recipe? existing}) {
     showModalBottomSheet(
       context: ctx,
       backgroundColor: AppColors.surface,
@@ -208,11 +235,12 @@ class _MealsScreenState extends State<MealsScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => _RecipeForm(
+        existing: existing,
         onSave: (recipe) {
           Navigator.pop(ctx);
-          provider.addCustomRecipe(recipe);
+          provider.addCustomRecipe(recipe); // insert-or-replace by id
           ScaffoldMessenger.of(ctx).showSnackBar(
-            const SnackBar(content: Text('Receta creada')),
+            SnackBar(content: Text(existing == null ? 'Receta creada' : 'Receta actualizada')),
           );
         },
         newId: provider.newRecipeId,
@@ -267,21 +295,26 @@ class _HeaderAction extends StatelessWidget {
 class _RecipeForm extends StatefulWidget {
   final ValueChanged<Recipe> onSave;
   final String Function(String title) newId;
-  const _RecipeForm({required this.onSave, required this.newId});
+
+  /// When set, the form edits this recipe in place instead of creating one.
+  final Recipe? existing;
+  const _RecipeForm({required this.onSave, required this.newId, this.existing});
   @override
   State<_RecipeForm> createState() => _RecipeFormState();
 }
 
 class _RecipeFormState extends State<_RecipeForm> {
-  final _title = TextEditingController();
-  final _ingredients = TextEditingController();
-  final _steps = TextEditingController();
-  final _prep = TextEditingController(text: '10');
-  final _cook = TextEditingController(text: '15');
-  final _gut = TextEditingController();
-  final _liver = TextEditingController();
-  String _protein = 'high';
-  String _carb = 'low';
+  late final Recipe? _e = widget.existing;
+  late final _title = TextEditingController(text: _e?.title ?? '');
+  late final _ingredients =
+      TextEditingController(text: _e?.ingredients.join('\n') ?? '');
+  late final _steps = TextEditingController(text: _e?.steps.join('\n') ?? '');
+  late final _prep = TextEditingController(text: '${_e?.prepMinutes ?? 10}');
+  late final _cook = TextEditingController(text: '${_e?.cookMinutes ?? 15}');
+  late final _gut = TextEditingController(text: _e?.gutNote ?? '');
+  late final _liver = TextEditingController(text: _e?.liverNote ?? '');
+  late String _protein = _e?.proteinLevel ?? 'high';
+  late String _carb = _e?.carbLevel ?? 'low';
 
   @override
   void dispose() {
@@ -304,12 +337,12 @@ class _RecipeFormState extends State<_RecipeForm> {
       return;
     }
     final recipe = Recipe(
-      id: widget.newId(title),
+      id: _e?.id ?? widget.newId(title),
       title: title,
-      category: 'custom',
+      category: _e?.category ?? 'custom',
       prepMinutes: int.tryParse(_prep.text) ?? 0,
       cookMinutes: int.tryParse(_cook.text) ?? 0,
-      servings: 1,
+      servings: _e?.servings ?? 1,
       ingredients: _ingredients.text
           .split('\n')
           .map((s) => s.trim())
@@ -324,8 +357,8 @@ class _RecipeFormState extends State<_RecipeForm> {
       carbLevel: _carb,
       gutNote: _gut.text.trim(),
       liverNote: _liver.text.trim(),
-      oilLimitNote: '',
-      tags: const ['custom'],
+      oilLimitNote: _e?.oilLimitNote ?? '',
+      tags: _e?.tags ?? const ['custom'],
     );
     widget.onSave(recipe);
   }
@@ -344,8 +377,9 @@ class _RecipeFormState extends State<_RecipeForm> {
           children: [
             const _SheetHandle(),
             const SizedBox(height: 12),
-            const Text('Nueva receta',
-                style: TextStyle(color: AppColors.textHi, fontSize: 20, fontWeight: FontWeight.w800)),
+            Text(_e == null ? 'Nueva receta' : 'Editar receta',
+                style: const TextStyle(
+                    color: AppColors.textHi, fontSize: 20, fontWeight: FontWeight.w800)),
             const SizedBox(height: 16),
             _Field('Título', _title, hint: 'Ej: Tortilla de espinacas'),
             const SizedBox(height: 12),
@@ -469,7 +503,7 @@ class _Segmented extends StatelessWidget {
 // ─────────────────────────── Shared detail sheet ──────────────────────────
 
 void showRecipeDetail(BuildContext context, Recipe r,
-    {VoidCallback? onDelete, VoidCallback? onSave}) {
+    {VoidCallback? onDelete, VoidCallback? onSave, VoidCallback? onEdit}) {
   showModalBottomSheet(
     context: context,
     backgroundColor: AppColors.surface,
@@ -493,6 +527,12 @@ void showRecipeDetail(BuildContext context, Recipe r,
                     style: const TextStyle(
                         color: AppColors.textHi, fontSize: 22, fontWeight: FontWeight.w800)),
               ),
+              if (onEdit != null)
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, color: AppColors.blue),
+                  tooltip: 'Editar receta',
+                  onPressed: onEdit,
+                ),
               if (onDelete != null)
                 IconButton(
                   icon: const Icon(Icons.delete_outline, color: AppColors.danger),

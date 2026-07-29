@@ -26,7 +26,14 @@ class MealsProvider extends ChangeNotifier {
   String? get error => _error;
   List<Recipe> get customRecipes => _customRecipes;
 
-  bool isCustom(Recipe r) => _customRecipes.any((c) => c.id == r.id);
+  /// Every recipe now lives in the database (the built-ins are seeded there),
+  /// so all of them can be edited and deleted.
+  bool isCustom(Recipe r) => true;
+
+  /// True for recipes the user created/imported rather than the built-ins
+  /// (which are seeded with ids like `r01`).
+  static final _seedIdPattern = RegExp(r'^r\d+$');
+  bool isUserCreated(Recipe r) => !_seedIdPattern.hasMatch(r.id);
 
   Recipe? _findById(String id) {
     for (final r in _customRecipes) {
@@ -116,7 +123,16 @@ class MealsProvider extends ChangeNotifier {
     }
   }
 
-  List<Recipe> getAllRecipes() => [..._customRecipes, ...seedRecipes];
+  /// All recipes come from the database — the built-ins are seeded on first run
+  /// so nothing is read-only.
+  List<Recipe> getAllRecipes() => _customRecipes;
+
+  /// Re-adds any built-in recipe that was deleted.
+  Future<int> restoreDefaultRecipes() async {
+    final added = await StorageService.restoreDefaultRecipes();
+    await load();
+    return added;
+  }
 
   MealPlanDay? getPlanDay(int week, int dow) => getMealPlanDay(week, dow);
 

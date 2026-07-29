@@ -433,3 +433,40 @@ class DateBar extends StatelessWidget {
     );
   }
 }
+
+/// Resolves a stored icon key (see `seed_tracked_items.dart`) to an icon.
+/// Unknown / null keys fall back to a neutral marker so user-added items work.
+IconData iconForKey(String? key) {
+  switch (key) {
+    case 'drink':
+      return Icons.local_drink;
+    case 'bolt':
+      return Icons.bolt;
+    case 'healing':
+      return Icons.healing;
+    case 'spa':
+      return Icons.spa;
+    case 'grass':
+      return Icons.grass;
+    case 'biotech':
+      return Icons.biotech;
+    case 'sun':
+      return Icons.wb_sunny;
+    case 'water':
+      return Icons.water_drop;
+    case 'apple':
+      return Icons.apple;
+    case 'egg':
+      return Icons.egg_alt;
+    case 'nofood':
+      return Icons.no_food;
+    case 'fastfood':
+      return Icons.fastfood_outlined;
+    case 'pill':
+      return Icons.medication;
+    case 'run':
+      return Icons.directions_run;
+    default:
+      return Icons.check_circle_outline;
+  }
+}

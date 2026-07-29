@@ -3,11 +3,16 @@
 Compañero offline de salud y entrenamiento para Android. Todo se guarda en el
 teléfono (SQLite), sin cuentas ni servidores.
 
+**Todo es editable.** La app viene con contenido por defecto (hábitos,
+ejercicios, recetas y lista de compra), pero nada está fijo: podés renombrar,
+borrar, reordenar y agregar en cada sección, y restaurar los valores por defecto
+cuando quieras.
+
 ## Qué hace
 
 - **Hoy** — panel del día: anillo de progreso, resumen (peso y tendencia, fuerza
   y bici de los últimos 7 días, racha) y checks de suplementos y alimentación.
-  Es de lectura + marcar checks; lo demás se edita en su pestaña.
+  Con "Editar" podés renombrar, reordenar, borrar y agregar cualquier ítem.
 - **Navegación por día** — barra de fecha (‹ fecha › y botón *Hoy*) en Hoy,
   Entrenamiento y Progreso, para rellenar o consultar cualquier día.
 - **Entrenamiento** — rutina del día según el plan semanal, adaptada

@@ -19,7 +19,6 @@ class TrainingProvider extends ChangeNotifier {
   DateTime _date = DateTime.now();
 
   List<Exercise> _customExercises = [];
-  Set<String> _hidden = {};
 
   Workout? get todayWorkout => _todayWorkout;
   List<Exercise> get exercises => _filteredExercises;
@@ -34,7 +33,7 @@ class TrainingProvider extends ChangeNotifier {
   bool get mobilityDone => _check?.mobility ?? false;
   String get _dateStr => AppDateUtils.toDateString(_date);
 
-  /// True for custom (user-added) exercises (id prefixed 'cx_').
+  /// All exercises now live in the database and are editable.
   bool isCustomExercise(Exercise e) => e.id.startsWith('cx_');
 
   Future<void> load([DateTime? date]) async {
@@ -51,7 +50,6 @@ class TrainingProvider extends ChangeNotifier {
       _kneePain = _check!.kneePain ?? 0;
       _abdomenBloating = _check!.abdomenBloating ?? 0;
 
-      _hidden = await StorageService.getHiddenExercises();
       _customExercises = _trainingType.startsWith('strength')
           ? await StorageService.getCustomExercises(_trainingType)
           : [];
@@ -67,20 +65,18 @@ class TrainingProvider extends ChangeNotifier {
     }
   }
 
-  /// Seed exercises (minus hidden) + custom exercises, then pain filter.
+  /// Every exercise is a database row (defaults are seeded), so the day's list
+  /// is simply those rows with the pain filter applied.
   void _refilter() {
     _todayWorkout = getWorkoutForType(_trainingType);
     if (_todayWorkout == null) {
       _filteredExercises = [];
+      _mergedCount = 0;
       return;
     }
-    final merged = <Exercise>[
-      ..._todayWorkout!.exercises.where((e) => !_hidden.contains(e.id)),
-      ..._customExercises,
-    ];
-    _mergedCount = merged.length;
+    _mergedCount = _customExercises.length;
     _filteredExercises = filterExercisesForPain(
-      exercises: merged,
+      exercises: _customExercises,
       shoulderPain: _shoulderPain,
       kneePain: _kneePain,
     );
@@ -103,17 +99,32 @@ class TrainingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Removes an exercise: deletes custom ones, hides seed ones.
   Future<void> removeExercise(Exercise e) async {
-    if (isCustomExercise(e)) {
-      await StorageService.deleteCustomExercise(e.id);
-      _customExercises = await StorageService.getCustomExercises(_trainingType);
-    } else {
-      await StorageService.setExerciseHidden(e.id, true);
-      _hidden = await StorageService.getHiddenExercises();
-    }
+    await StorageService.deleteCustomExercise(e.id);
+    _customExercises = await StorageService.getCustomExercises(_trainingType);
     _refilter();
     notifyListeners();
+  }
+
+  /// Edits an exercise in place.
+  Future<void> updateExercise(Exercise e, String name, int sets, String reps) async {
+    final n = name.trim();
+    if (n.isEmpty) return;
+    await StorageService.updateCustomExercise(e.id,
+        name: n, sets: sets, reps: reps.trim().isEmpty ? e.reps : reps.trim());
+    _customExercises = await StorageService.getCustomExercises(_trainingType);
+    _refilter();
+    notifyListeners();
+  }
+
+  /// Re-adds built-in exercises for this day that were deleted.
+  Future<int> restoreDefaultExercises() async {
+    if (!_trainingType.startsWith('strength')) return 0;
+    final added = await StorageService.restoreDefaultExercises(_trainingType);
+    _customExercises = await StorageService.getCustomExercises(_trainingType);
+    _refilter();
+    notifyListeners();
+    return added;
   }
 
   /// Update today's pain levels (also re-adapts the exercise list).

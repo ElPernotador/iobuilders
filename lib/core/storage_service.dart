@@ -7,6 +7,9 @@ import 'models/workout.dart';
 import 'models/recipe.dart';
 import 'models/app_settings.dart';
 import 'models/custom_item.dart';
+import '../data/seed_recipes.dart';
+import '../data/seed_tracked_items.dart';
+import '../data/seed_training_plan.dart';
 
 class StorageService {
   static Database? _db;
@@ -27,7 +30,7 @@ class StorageService {
     final path = join(dbPath, 'dieter.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onUpgrade: (db, oldV, newV) async {
         if (oldV < 2) {
           await _createV2Tables(db);
@@ -35,10 +38,14 @@ class StorageService {
         if (oldV < 3) {
           await _createV3Tables(db);
         }
+        if (oldV < 4) {
+          await _migrateToV4(db);
+        }
       },
       onCreate: (db, version) async {
         await _createV2Tables(db);
         await _createV3Tables(db);
+        await _seedAll(db);
         await db.execute('''
           CREATE TABLE daily_checks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,7 +133,8 @@ class StorageService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         section TEXT NOT NULL,
-        sortOrder INTEGER DEFAULT 0
+        sortOrder INTEGER DEFAULT 0,
+        icon TEXT
       )
     ''');
     await db.execute('''
@@ -168,7 +176,12 @@ class StorageService {
         reps TEXT DEFAULT '10',
         restSeconds INTEGER DEFAULT 60,
         instructions TEXT DEFAULT '',
-        sortOrder INTEGER DEFAULT 0
+        sortOrder INTEGER DEFAULT 0,
+        safetyNote TEXT DEFAULT '',
+        easierVariant TEXT DEFAULT '',
+        harderVariant TEXT DEFAULT '',
+        tags TEXT DEFAULT '',
+        seedId TEXT
       )
     ''');
     await db.execute('''
@@ -179,25 +192,82 @@ class StorageService {
     ''');
   }
 
-  // --- Custom exercises (user-editable workouts) ---
+  // --- Exercises: every exercise is a row here, so all are editable ---
+
+  /// Copies the built-in plan into the table on first run.
+  static Future<void> _seedExercises(Database db) async {
+    final batch = db.batch();
+    for (final type in ['strength_a', 'strength_b', 'strength_c']) {
+      final workout = getWorkoutForType(type);
+      if (workout == null) continue;
+      for (var i = 0; i < workout.exercises.length; i++) {
+        batch.insert('custom_exercises',
+            _exerciseToRow(workout.exercises[i], type, i, seedId: workout.exercises[i].id));
+      }
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Re-adds any built-in exercise that was deleted, for the given type.
+  static Future<int> restoreDefaultExercises(String workoutType) async {
+    final database = await db;
+    final workout = getWorkoutForType(workoutType);
+    if (workout == null) return 0;
+    final existing = await database.query('custom_exercises',
+        columns: ['seedId'], where: 'workoutType = ?', whereArgs: [workoutType]);
+    final have = existing.map((r) => r['seedId'] as String?).whereType<String>().toSet();
+    var added = 0;
+    final batch = database.batch();
+    for (var i = 0; i < workout.exercises.length; i++) {
+      final ex = workout.exercises[i];
+      if (have.contains(ex.id)) continue;
+      batch.insert('custom_exercises', _exerciseToRow(ex, workoutType, i, seedId: ex.id));
+      added++;
+    }
+    await batch.commit(noResult: true);
+    return added;
+  }
+
+  static Map<String, dynamic> _exerciseToRow(
+      Exercise e, String workoutType, int sortOrder,
+      {String? seedId}) =>
+      {
+        'workoutType': workoutType,
+        'name': e.name,
+        'sets': e.sets,
+        'reps': e.reps,
+        'restSeconds': e.restSeconds,
+        'instructions': e.instructions,
+        'sortOrder': sortOrder,
+        'safetyNote': e.safetyNote,
+        'easierVariant': e.easierVariant,
+        'harderVariant': e.harderVariant,
+        'tags': e.tags.join(','),
+        'seedId': seedId,
+      };
+
   static Future<List<Exercise>> getCustomExercises(String workoutType) async {
     final database = await db;
     final rows = await database.query('custom_exercises',
         where: 'workoutType = ?', whereArgs: [workoutType], orderBy: 'sortOrder ASC, id ASC');
-    return rows
-        .map((m) => Exercise(
-              id: 'cx_${m['id']}',
-              name: m['name'] as String,
-              sets: (m['sets'] as int?) ?? 3,
-              reps: (m['reps'] as String?) ?? '10',
-              restSeconds: (m['restSeconds'] as int?) ?? 60,
-              instructions: (m['instructions'] as String?) ?? '',
-              safetyNote: '',
-              easierVariant: '',
-              harderVariant: '',
-              tags: const ['custom', 'shoulder_safe', 'knee_safe'],
-            ))
-        .toList();
+    return rows.map((m) {
+      final rawTags = (m['tags'] as String?) ?? '';
+      final tags = rawTags.isEmpty
+          ? const ['shoulder_safe', 'knee_safe']
+          : rawTags.split(',').where((t) => t.isNotEmpty).toList();
+      return Exercise(
+        id: 'cx_${m['id']}',
+        name: m['name'] as String,
+        sets: (m['sets'] as int?) ?? 3,
+        reps: (m['reps'] as String?) ?? '10',
+        restSeconds: (m['restSeconds'] as int?) ?? 60,
+        instructions: (m['instructions'] as String?) ?? '',
+        safetyNote: (m['safetyNote'] as String?) ?? '',
+        easierVariant: (m['easierVariant'] as String?) ?? '',
+        harderVariant: (m['harderVariant'] as String?) ?? '',
+        tags: tags,
+      );
+    }).toList();
   }
 
   static Future<void> addCustomExercise({
@@ -209,6 +279,10 @@ class StorageService {
     String instructions = '',
   }) async {
     final database = await db;
+    final maxRow = await database.rawQuery(
+        'SELECT MAX(sortOrder) AS m FROM custom_exercises WHERE workoutType = ?',
+        [workoutType]);
+    final next = ((maxRow.first['m'] as int?) ?? -1) + 1;
     await database.insert('custom_exercises', {
       'workoutType': workoutType,
       'name': name,
@@ -216,11 +290,34 @@ class StorageService {
       'reps': reps,
       'restSeconds': restSeconds,
       'instructions': instructions,
-      'sortOrder': 0,
+      'sortOrder': next,
+      'safetyNote': '',
+      'easierVariant': '',
+      'harderVariant': '',
+      // User-added moves are assumed joint-safe so the pain filter keeps them.
+      'tags': 'shoulder_safe,knee_safe',
     });
   }
 
-  /// Deletes a custom exercise. [exerciseId] is the 'cx_<id>' form.
+  /// Updates an existing exercise. [exerciseId] is the 'cx_<id>' form.
+  static Future<void> updateCustomExercise(
+    String exerciseId, {
+    required String name,
+    required int sets,
+    required String reps,
+  }) async {
+    final database = await db;
+    final raw = int.tryParse(exerciseId.replaceFirst('cx_', ''));
+    if (raw == null) return;
+    await database.update(
+      'custom_exercises',
+      {'name': name, 'sets': sets, 'reps': reps},
+      where: 'id = ?',
+      whereArgs: [raw],
+    );
+  }
+
+  /// Deletes an exercise. [exerciseId] is the 'cx_<id>' form.
   static Future<void> deleteCustomExercise(String exerciseId) async {
     final database = await db;
     final raw = int.tryParse(exerciseId.replaceFirst('cx_', ''));
@@ -243,7 +340,88 @@ class StorageService {
     );
   }
 
-  // --- Custom items (user-defined trackables) ---
+  /// v4: the built-in habits, recipes and exercises stopped being hardcoded and
+  /// became ordinary editable rows. Adds the new columns and seeds the defaults.
+  static Future<void> _migrateToV4(Database db) async {
+    for (final stmt in [
+      'ALTER TABLE custom_items ADD COLUMN icon TEXT',
+      "ALTER TABLE custom_exercises ADD COLUMN safetyNote TEXT DEFAULT ''",
+      "ALTER TABLE custom_exercises ADD COLUMN easierVariant TEXT DEFAULT ''",
+      "ALTER TABLE custom_exercises ADD COLUMN harderVariant TEXT DEFAULT ''",
+      "ALTER TABLE custom_exercises ADD COLUMN tags TEXT DEFAULT ''",
+      'ALTER TABLE custom_exercises ADD COLUMN seedId TEXT',
+    ]) {
+      try {
+        await db.execute(stmt);
+      } catch (_) {
+        // Column already present.
+      }
+    }
+    await _seedAll(db);
+  }
+
+  /// Seeds every default set. Runs once (create / upgrade), so deletions stick.
+  static Future<void> _seedAll(Database db) async {
+    await _seedDefaultItems(db);
+    await _seedRecipes(db);
+    await _seedExercises(db);
+  }
+
+  /// Inserts the default trackables. Runs once (on create / on upgrade) so that
+  /// deleting them stays deleted.
+  static Future<void> _seedDefaultItems(Database db) async {
+    final batch = db.batch();
+    for (final item in defaultTrackedItemsAsModels()) {
+      batch.insert('custom_items', item.toMap());
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Copies the built-in recipes into the table so every recipe is editable.
+  /// `ignore` keeps a re-run from duplicating or clobbering user edits.
+  static Future<void> _seedRecipes(Database db) async {
+    final batch = db.batch();
+    for (final r in seedRecipes) {
+      batch.insert('custom_recipes', _recipeToRow(r),
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Re-adds any built-in recipe the user deleted. Returns how many came back.
+  static Future<int> restoreDefaultRecipes() async {
+    final database = await db;
+    final existing = await database.query('custom_recipes', columns: ['id']);
+    final have = existing.map((r) => r['id'] as String).toSet();
+    var added = 0;
+    final batch = database.batch();
+    for (final r in seedRecipes) {
+      if (have.contains(r.id)) continue;
+      batch.insert('custom_recipes', _recipeToRow(r));
+      added++;
+    }
+    await batch.commit(noResult: true);
+    return added;
+  }
+
+  static Map<String, dynamic> _recipeToRow(Recipe r) => {
+        'id': r.id,
+        'title': r.title,
+        'category': r.category,
+        'prepMinutes': r.prepMinutes,
+        'cookMinutes': r.cookMinutes,
+        'servings': r.servings,
+        'ingredients': r.ingredients.join('\n'),
+        'steps': r.steps.join('\n'),
+        'proteinLevel': r.proteinLevel,
+        'carbLevel': r.carbLevel,
+        'gutNote': r.gutNote,
+        'liverNote': r.liverNote,
+        'oilLimitNote': r.oilLimitNote,
+        'tags': r.tags.join(','),
+      };
+
+  // --- Tracked items (the whole daily checklist; defaults are just rows) ---
   static Future<List<CustomItem>> getCustomItems() async {
     final database = await db;
     final rows = await database.query('custom_items', orderBy: 'sortOrder ASC, id ASC');
@@ -252,9 +430,54 @@ class StorageService {
 
   static Future<CustomItem> addCustomItem(String name, String section) async {
     final database = await db;
-    final item = CustomItem(name: name, section: section, sortOrder: 0);
+    // Append after the current last item of that section.
+    final maxRow = await database.rawQuery(
+        'SELECT MAX(sortOrder) AS m FROM custom_items WHERE section = ?', [section]);
+    final next = ((maxRow.first['m'] as int?) ?? -1) + 1;
+    final item = CustomItem(name: name, section: section, sortOrder: next);
     item.id = await database.insert('custom_items', item.toMap());
     return item;
+  }
+
+  /// Persists a new ordering (index → sortOrder) for the given items.
+  static Future<void> setCustomItemOrder(List<CustomItem> ordered) async {
+    final database = await db;
+    final batch = database.batch();
+    for (var i = 0; i < ordered.length; i++) {
+      batch.update('custom_items', {'sortOrder': i},
+          where: 'id = ?', whereArgs: [ordered[i].id]);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Re-inserts any default trackable that is currently missing (by name +
+  /// section), leaving the user's own items and edits untouched.
+  static Future<int> restoreDefaultItems() async {
+    final database = await db;
+    final existing = await database.query('custom_items');
+    final have = existing
+        .map((r) => '${r['section']}|${(r['name'] as String).toLowerCase()}')
+        .toSet();
+    var added = 0;
+    final batch = database.batch();
+    for (final item in defaultTrackedItemsAsModels()) {
+      if (have.contains('${item.section}|${item.name.toLowerCase()}')) continue;
+      batch.insert('custom_items', item.toMap());
+      added++;
+    }
+    await batch.commit(noResult: true);
+    return added;
+  }
+
+  /// Checked-item counts per date, for the progress heatmap.
+  static Future<Map<String, int>> getCustomCheckCounts(String from, String to) async {
+    final database = await db;
+    final rows = await database.rawQuery(
+      'SELECT date, COUNT(*) AS c FROM custom_checks '
+      'WHERE checked = 1 AND date >= ? AND date <= ? GROUP BY date',
+      [from, to],
+    );
+    return {for (final r in rows) r['date'] as String: r['c'] as int};
   }
 
   static Future<void> updateCustomItem(CustomItem item) async {
@@ -295,22 +518,7 @@ class StorageService {
     final database = await db;
     await database.insert(
       'custom_recipes',
-      {
-        'id': r.id,
-        'title': r.title,
-        'category': r.category,
-        'prepMinutes': r.prepMinutes,
-        'cookMinutes': r.cookMinutes,
-        'servings': r.servings,
-        'ingredients': r.ingredients.join('\n'),
-        'steps': r.steps.join('\n'),
-        'proteinLevel': r.proteinLevel,
-        'carbLevel': r.carbLevel,
-        'gutNote': r.gutNote,
-        'liverNote': r.liverNote,
-        'oilLimitNote': r.oilLimitNote,
-        'tags': r.tags.join(','),
-      },
+      _recipeToRow(r),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -375,6 +583,11 @@ class StorageService {
     return rows.map(BodyMetric.fromMap).toList();
   }
 
+  static Future<void> deleteMetric(int id) async {
+    final database = await db;
+    await database.delete('body_metrics', where: 'id = ?', whereArgs: [id]);
+  }
+
   static Future<void> saveMetric(BodyMetric metric) async {
     final database = await db;
     if (metric.id != null) {
@@ -423,6 +636,11 @@ class StorageService {
     } else {
       item.id = await database.insert('shopping_items', item.toMap());
     }
+  }
+
+  static Future<void> deleteShoppingItem(int id) async {
+    final database = await db;
+    await database.delete('shopping_items', where: 'id = ?', whereArgs: [id]);
   }
 
   static Future<void> deleteShoppingItemsForWeek(String weekKey) async {

@@ -502,48 +502,12 @@ class _EditRoutineState extends State<_EditRoutine> {
           ),
         ),
         Gap.l,
-        ...p.exercises.map((e) => AppCard(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(e.name,
-                                  style: const TextStyle(color: AppColors.textHi, fontSize: 14.5, fontWeight: FontWeight.w600)),
-                            ),
-                            if (p.isCustomExercise(e)) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text('Tuyo',
-                                    style: TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.w700)),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text('${e.sets}×${e.reps}',
-                            style: const TextStyle(color: AppColors.textMid, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                    tooltip: 'Quitar',
-                    onPressed: () => widget.provider.removeExercise(e),
-                  ),
-                ],
-              ),
+        ...p.exercises.map((e) => _ExerciseEditCard(
+              key: ValueKey('ex_${e.id}'),
+              exercise: e,
+              onSave: (name, sets, reps) =>
+                  widget.provider.updateExercise(e, name, sets, reps),
+              onDelete: () => widget.provider.removeExercise(e),
             )),
         Gap.s,
         const SectionLabel('Añadir ejercicio'),
@@ -584,9 +548,119 @@ class _EditRoutineState extends State<_EditRoutine> {
             ],
           ),
         ),
-        Gap.l,
+        Gap.m,
+        Center(
+          child: TextButton.icon(
+            onPressed: () async {
+              final added = await widget.provider.restoreDefaultExercises();
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(added == 0
+                    ? 'Ya tenías todos los ejercicios por defecto'
+                    : 'Se restauraron $added ejercicio(s)'),
+              ));
+            },
+            icon: const Icon(Icons.restore, size: 16, color: AppColors.textMid),
+            label: const Text('Restaurar ejercicios por defecto',
+                style: TextStyle(color: AppColors.textMid, fontSize: 13)),
+          ),
+        ),
+        Gap.s,
         PrimaryButton(label: 'Listo', icon: Icons.check, onPressed: widget.onDone),
       ],
+    );
+  }
+}
+
+/// One exercise in edit mode: name / series / reps editable inline, plus delete.
+class _ExerciseEditCard extends StatefulWidget {
+  final Exercise exercise;
+  final void Function(String name, int sets, String reps) onSave;
+  final VoidCallback onDelete;
+  const _ExerciseEditCard({
+    super.key,
+    required this.exercise,
+    required this.onSave,
+    required this.onDelete,
+  });
+  @override
+  State<_ExerciseEditCard> createState() => _ExerciseEditCardState();
+}
+
+class _ExerciseEditCardState extends State<_ExerciseEditCard> {
+  late final _name = TextEditingController(text: widget.exercise.name);
+  late final _sets = TextEditingController(text: '${widget.exercise.sets}');
+  late final _reps = TextEditingController(text: widget.exercise.reps);
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _sets.dispose();
+    _reps.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final changed = _name.text.trim() != widget.exercise.name ||
+        _sets.text.trim() != '${widget.exercise.sets}' ||
+        _reps.text.trim() != widget.exercise.reps;
+    if (!changed) return;
+    widget.onSave(
+        _name.text, int.tryParse(_sets.text) ?? widget.exercise.sets, _reps.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _name,
+                  style: const TextStyle(
+                      color: AppColors.textHi, fontSize: 14.5, fontWeight: FontWeight.w600),
+                  cursorColor: AppColors.primary,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  onSubmitted: (_) => _commit(),
+                  onTapOutside: (_) => _commit(),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
+                tooltip: 'Quitar',
+                visualDensity: VisualDensity.compact,
+                onPressed: widget.onDelete,
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(child: _MiniField(label: 'Series', controller: _sets, number: true)),
+              const SizedBox(width: 12),
+              Expanded(flex: 2, child: _MiniField(label: 'Reps', controller: _reps)),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: const Icon(Icons.check, color: AppColors.primary, size: 20),
+                tooltip: 'Guardar',
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  _commit();
+                  FocusScope.of(context).unfocus();
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

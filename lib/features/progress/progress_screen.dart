@@ -104,7 +104,15 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       const SizedBox(height: 16),
                       _WeeklyTrainingCard(provider: provider),
                       const SizedBox(height: 16),
-                      _HeatmapCard(heatmap: provider.habitHeatmap, endDate: provider.selectedDate),
+                      _HeatmapCard(
+                          heatmap: provider.habitHeatmap,
+                          endDate: provider.selectedDate,
+                          maxScore: provider.maxDailyScore),
+                      const SizedBox(height: 16),
+                      _MetricHistoryCard(
+                        metrics: provider.metrics,
+                        onEdit: (m) => _showAddMetric(ctx, provider, existing: m),
+                      ),
                       const SizedBox(height: 32),
                     ],
                   ),
@@ -117,12 +125,62 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
   }
 
-  void _showAddMetric(BuildContext ctx, ProgressProvider provider) {
+  void _showAddMetric(BuildContext ctx, ProgressProvider provider,
+      {BodyMetric? existing}) {
     showModalBottomSheet(
       context: ctx,
       backgroundColor: const Color(0xFF1E1E1E),
       isScrollControlled: true,
-      builder: (_) => _AddMetricSheet(provider: provider),
+      builder: (_) => _AddMetricSheet(provider: provider, existing: existing),
+    );
+  }
+}
+
+/// Tappable list of saved measurements, so any entry can be edited or removed.
+class _MetricHistoryCard extends StatelessWidget {
+  final List<BodyMetric> metrics;
+  final ValueChanged<BodyMetric> onEdit;
+  const _MetricHistoryCard({required this.metrics, required this.onEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    if (metrics.isEmpty) return const SizedBox.shrink();
+    final recent = metrics.reversed.take(12).toList();
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionLabel('Registros', padding: EdgeInsets.only(bottom: 4)),
+          const Text('Toca uno para editarlo o borrarlo',
+              style: TextStyle(color: AppColors.textLo, fontSize: 12)),
+          const SizedBox(height: 8),
+          ...recent.map((m) {
+            final parts = <String>[
+              if (m.weight != null) '${m.weight} kg',
+              if (m.waist != null) '${m.waist} cm',
+              if (m.frontPhotoPath != null || m.sidePhotoPath != null) '📷',
+            ];
+            return InkWell(
+              onTap: () => onEdit(m),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(m.date,
+                          style: const TextStyle(color: AppColors.textHi, fontSize: 13.5)),
+                    ),
+                    Text(parts.isEmpty ? '—' : parts.join(' · '),
+                        style: const TextStyle(color: AppColors.textMid, fontSize: 13)),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.edit_outlined, size: 15, color: AppColors.textLo),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 }
@@ -131,17 +189,23 @@ class _ProgressScreenState extends State<ProgressScreen> {
 
 class _AddMetricSheet extends StatefulWidget {
   final ProgressProvider provider;
-  const _AddMetricSheet({required this.provider});
+
+  /// When set, edits this entry instead of creating a new one.
+  final BodyMetric? existing;
+  const _AddMetricSheet({required this.provider, this.existing});
 
   @override
   State<_AddMetricSheet> createState() => _AddMetricSheetState();
 }
 
 class _AddMetricSheetState extends State<_AddMetricSheet> {
-  final _weightCtrl = TextEditingController();
-  final _waistCtrl = TextEditingController();
-  String? _frontPath;
-  String? _sidePath;
+  late final BodyMetric? _e = widget.existing;
+  late final _weightCtrl =
+      TextEditingController(text: _e?.weight?.toString() ?? '');
+  late final _waistCtrl =
+      TextEditingController(text: _e?.waist?.toString() ?? '');
+  late String? _frontPath = _e?.frontPhotoPath;
+  late String? _sidePath = _e?.sidePhotoPath;
   final _picker = ImagePicker();
 
   Future<void> _pickPhoto({required bool front, required bool fromCamera}) async {
@@ -174,12 +238,30 @@ class _AddMetricSheetState extends State<_AddMetricSheet> {
         top: 16,
       ),
       child: SingleChildScrollView(
-        child: Column(
+        child: Builder(builder: (context) {
+          final existing = _e;
+          return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Registrar medidas',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(existing == null ? 'Registrar medidas' : 'Editar medidas',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                if (existing != null)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+                    tooltip: 'Eliminar registro',
+                    onPressed: () {
+                      Navigator.pop(context);
+                      widget.provider.deleteMetric(existing);
+                    },
+                  ),
+              ],
+            ),
             const SizedBox(height: 16),
             _MetricField('Peso (kg)', _weightCtrl, '84.5'),
             const SizedBox(height: 8),
@@ -218,7 +300,8 @@ class _AddMetricSheetState extends State<_AddMetricSheet> {
                 final waist = double.tryParse(_waistCtrl.text.replaceAll(',', '.'));
                 Navigator.pop(context);
                 widget.provider.addMetric(BodyMetric(
-                  date: widget.provider.selectedString,
+                  id: _e?.id,
+                  date: _e?.date ?? widget.provider.selectedString,
                   weight: weight,
                   waist: waist,
                   frontPhotoPath: _frontPath,
@@ -233,7 +316,8 @@ class _AddMetricSheetState extends State<_AddMetricSheet> {
             ),
             const SizedBox(height: 8),
           ],
-        ),
+          );
+        }),
       ),
     );
   }
@@ -659,7 +743,9 @@ class _WeeklyTrainingCard extends StatelessWidget {
 class _HeatmapCard extends StatelessWidget {
   final Map<String, int> heatmap;
   final DateTime endDate;
-  const _HeatmapCard({required this.heatmap, required this.endDate});
+  final int maxScore;
+  const _HeatmapCard(
+      {required this.heatmap, required this.endDate, required this.maxScore});
 
   @override
   Widget build(BuildContext context) {
@@ -689,8 +775,9 @@ class _HeatmapCard extends StatelessWidget {
             runSpacing: 4,
             children: last30.map((e) {
               final score = e.value;
-              final opacity =
-                  score == 0 ? 0.1 : (score / 15).clamp(0.2, 1.0);
+              final opacity = score == 0
+                  ? 0.1
+                  : (score / (maxScore <= 0 ? 1 : maxScore)).clamp(0.2, 1.0);
               return Tooltip(
                 message: '${e.key}: $score checks',
                 child: Container(

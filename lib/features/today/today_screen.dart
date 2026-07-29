@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/date_utils.dart';
+import '../../core/models/custom_item.dart';
 import '../../core/models/daily_check.dart';
 import '../../core/nav_controller.dart';
 import '../../core/selected_date_controller.dart';
@@ -8,17 +9,42 @@ import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import 'today_provider.dart';
 
-/// Builds read-only custom-item check rows for a given section.
-/// (Add/rename/delete now lives in Settings → "Mis ítems".)
-List<Widget> _customRows(TodayProvider provider, String section) {
-  return provider.customItemsFor(section).map((item) {
-    return _CheckRow(
-      item.name,
-      provider.isCustomChecked(item.id!),
-      () => provider.toggleCustomItem(item.id!),
-      icon: Icons.star_outline,
-    );
-  }).toList();
+/// Rows for one section. In normal mode they are check rows; in edit mode each
+/// row can be renamed, reordered or deleted, and an "add" row is appended.
+List<Widget> _itemRows(
+  TodayProvider provider,
+  String section, {
+  required bool editing,
+  required String addHint,
+}) {
+  final items = provider.customItemsFor(section);
+  final rows = <Widget>[];
+  for (var i = 0; i < items.length; i++) {
+    final item = items[i];
+    rows.add(editing
+        ? _EditableItemRow(
+            key: ValueKey('edit_${item.id}'),
+            item: item,
+            isFirst: i == 0,
+            isLast: i == items.length - 1,
+            onRename: (name) => provider.renameCustomItem(item, name),
+            onDelete: () => provider.deleteCustomItem(item.id!),
+            onMove: (delta) => provider.moveCustomItem(item, delta),
+          )
+        : _CheckRow(
+            item.name,
+            provider.isCustomChecked(item.id!),
+            () => provider.toggleCustomItem(item.id!),
+            icon: iconForKey(item.icon),
+          ));
+  }
+  if (editing) {
+    rows.add(_AddItemRow(
+      hint: addHint,
+      onAdd: (name) => provider.addCustomItem(name, section),
+    ));
+  }
+  return rows;
 }
 
 class TodayScreen extends StatefulWidget {
@@ -30,6 +56,7 @@ class TodayScreen extends StatefulWidget {
 class _TodayScreenState extends State<TodayScreen> {
   NavController? _nav;
   SelectedDateController? _dateCtrl;
+  bool _editing = false;
 
   @override
   void initState() {
@@ -124,35 +151,33 @@ class _TodayScreenState extends State<TodayScreen> {
                       Gap.l,
                       _TrainingSummary(check: check, date: provider.date),
                       Gap.xl,
-                      const SectionLabel('Suplementos'),
-                      _CheckGroup(children: [
-                        _CheckRow('Whey', check.whey, () => provider.toggle('whey'), icon: Icons.local_drink),
-                        _CheckRow('Creatina', check.creatine, () => provider.toggle('creatine'), icon: Icons.bolt),
-                        _CheckRow('MSM', check.msm, () => provider.toggle('msm'), icon: Icons.healing),
-                        _CheckRow('Colina', check.choline, () => provider.toggle('choline'), icon: Icons.spa),
-                        _CheckRow('Fenogreco', check.fenugreek, () => provider.toggle('fenugreek'), icon: Icons.grass),
-                        _CheckRow('Probiótico', check.probiotic, () => provider.toggle('probiotic'), icon: Icons.biotech),
-                        _CheckRow('Vitamina D', check.vitaminD, () => provider.toggle('vitaminD'), icon: Icons.wb_sunny),
-                        _CheckRow('Omega 3', check.omega3, () => provider.toggle('omega3'), icon: Icons.water_drop),
-                        ..._customRows(provider, 'supplement'),
-                      ]),
+                      SectionLabel(
+                        _editing ? 'Editar listas' : 'Suplementos',
+                        trailing: _EditToggle(
+                          editing: _editing,
+                          onTap: () => setState(() => _editing = !_editing),
+                        ),
+                      ),
+                      if (_editing) const SectionLabel('Suplementos'),
+                      _CheckGroup(
+                          children: _itemRows(provider, 'supplement',
+                              editing: _editing, addHint: 'Añadir suplemento')),
                       Gap.xl,
                       const SectionLabel('Alimentación'),
-                      _CheckGroup(children: [
-                        _CheckRow('Fruta del día', check.fruit, () => provider.toggle('fruit'), icon: Icons.apple),
-                        _CheckRow('2 L de agua', check.water2L, () => provider.toggle('water2L'), icon: Icons.local_drink_outlined),
-                        _CheckRow('Objetivo proteína', check.proteinTarget, () => provider.toggle('proteinTarget'), icon: Icons.egg_alt),
-                        _CheckRow('Sin bun/pan', check.noBun, () => provider.toggle('noBun'), icon: Icons.no_food),
-                        _CheckRow('Sin ultraprocesados', check.noUltraProcessed, () => provider.toggle('noUltraProcessed'), icon: Icons.fastfood_outlined),
-                        ..._customRows(provider, 'food'),
-                      ]),
-                      if (provider.customItemsFor('training').isNotEmpty) ...[
+                      _CheckGroup(
+                          children: _itemRows(provider, 'food',
+                              editing: _editing, addHint: 'Añadir alimento o hábito')),
+                      if (_editing || provider.customItemsFor('training').isNotEmpty) ...[
                         Gap.xl,
                         const SectionLabel('Otros hábitos'),
-                        _CheckGroup(children: _customRows(provider, 'training')),
+                        _CheckGroup(
+                            children: _itemRows(provider, 'training',
+                                editing: _editing, addHint: 'Añadir otro hábito')),
                       ],
-                      Gap.xl,
-                      _ManageHint(),
+                      if (_editing) ...[
+                        Gap.l,
+                        _RestoreDefaultsButton(provider: provider),
+                      ],
                     ],
                   ),
                 ),
@@ -613,16 +638,196 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-// ─────────────── Hint linking to custom-item management ───────────────────
+// ──────────────────────── Editing the daily lists ─────────────────────────
 
-class _ManageHint extends StatelessWidget {
+class _EditToggle extends StatelessWidget {
+  final bool editing;
+  final VoidCallback onTap;
+  const _EditToggle({required this.editing, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(editing ? Icons.check : Icons.edit_outlined,
+              size: 15, color: editing ? AppColors.primary : AppColors.textMid),
+          const SizedBox(width: 4),
+          Text(editing ? 'Listo' : 'Editar',
+              style: TextStyle(
+                  color: editing ? AppColors.primary : AppColors.textMid,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
+/// One trackable in edit mode: rename inline, reorder, delete.
+class _EditableItemRow extends StatefulWidget {
+  final CustomItem item;
+  final bool isFirst;
+  final bool isLast;
+  final ValueChanged<String> onRename;
+  final VoidCallback onDelete;
+  final ValueChanged<int> onMove;
+  const _EditableItemRow({
+    super.key,
+    required this.item,
+    required this.isFirst,
+    required this.isLast,
+    required this.onRename,
+    required this.onDelete,
+    required this.onMove,
+  });
+  @override
+  State<_EditableItemRow> createState() => _EditableItemRowState();
+}
+
+class _EditableItemRowState extends State<_EditableItemRow> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.item.name);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: Row(
+        children: [
+          Icon(iconForKey(widget.item.icon), size: 18, color: AppColors.textMid),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _ctrl,
+              style: const TextStyle(color: AppColors.textHi, fontSize: 15),
+              cursorColor: AppColors.primary,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
+              ),
+              onSubmitted: widget.onRename,
+              onTapOutside: (_) {
+                if (_ctrl.text.trim() != widget.item.name) {
+                  widget.onRename(_ctrl.text);
+                }
+              },
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.keyboard_arrow_up, size: 20),
+            color: widget.isFirst ? AppColors.textLo : AppColors.textMid,
+            tooltip: 'Subir',
+            visualDensity: VisualDensity.compact,
+            onPressed: widget.isFirst ? null : () => widget.onMove(-1),
+          ),
+          IconButton(
+            icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+            color: widget.isLast ? AppColors.textLo : AppColors.textMid,
+            tooltip: 'Bajar',
+            visualDensity: VisualDensity.compact,
+            onPressed: widget.isLast ? null : () => widget.onMove(1),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
+            tooltip: 'Eliminar',
+            visualDensity: VisualDensity.compact,
+            onPressed: widget.onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Inline "add item" row shown at the end of a section in edit mode.
+class _AddItemRow extends StatefulWidget {
+  final String hint;
+  final ValueChanged<String> onAdd;
+  const _AddItemRow({required this.hint, required this.onAdd});
+  @override
+  State<_AddItemRow> createState() => _AddItemRowState();
+}
+
+class _AddItemRowState extends State<_AddItemRow> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final t = _ctrl.text.trim();
+    if (t.isEmpty) return;
+    widget.onAdd(t);
+    _ctrl.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      color: AppColors.surfaceAlt,
+      child: Row(
+        children: [
+          const Icon(Icons.add, size: 18, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _ctrl,
+              style: const TextStyle(color: AppColors.textHi, fontSize: 15),
+              cursorColor: AppColors.primary,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: widget.hint,
+                hintStyle: const TextStyle(color: AppColors.textLo),
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.check, color: AppColors.primary, size: 22),
+            tooltip: 'Añadir',
+            onPressed: _submit,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RestoreDefaultsButton extends StatelessWidget {
+  final TodayProvider provider;
+  const _RestoreDefaultsButton({required this.provider});
   @override
   Widget build(BuildContext context) {
     return Center(
       child: TextButton.icon(
-        onPressed: () => context.read<NavController>().goTo(Tabs.settings),
-        icon: const Icon(Icons.tune, size: 16, color: AppColors.textMid),
-        label: const Text('Personalizar mis ítems',
+        onPressed: () async {
+          final added = await provider.restoreDefaultItems();
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(added == 0
+                ? 'Ya tenías todos los ítems por defecto'
+                : 'Se restauraron $added ítem(s) por defecto'),
+          ));
+        },
+        icon: const Icon(Icons.restore, size: 16, color: AppColors.textMid),
+        label: const Text('Restaurar ítems por defecto',
             style: TextStyle(color: AppColors.textMid, fontSize: 13)),
       ),
     );

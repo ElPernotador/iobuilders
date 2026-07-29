@@ -61,6 +61,49 @@ class ShoppingProvider extends ChangeNotifier {
     await load();
   }
 
+  /// Categories currently in use, for the add-item picker.
+  List<String> get categories => grouped.keys.toList();
+
+  Future<void> addItem(String name, String category) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    await StorageService.saveShoppingItem(ShoppingItem(
+      weekKey: _currentWeekKey,
+      name: trimmed,
+      category: category.trim().isEmpty ? 'Otros' : category.trim(),
+      isCustom: true,
+    ));
+    _items = await StorageService.getShoppingItems(_currentWeekKey);
+    notifyListeners();
+  }
+
+  Future<void> renameItem(ShoppingItem item, String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    item.name = trimmed;
+    await StorageService.saveShoppingItem(item);
+    notifyListeners();
+  }
+
+  Future<void> deleteItem(ShoppingItem item) async {
+    if (item.id == null) return;
+    await StorageService.deleteShoppingItem(item.id!);
+    _items = _items.where((i) => i.id != item.id).toList();
+    notifyListeners();
+  }
+
+  /// Re-inserts this week's default list without touching items the user added.
+  Future<void> restoreWeekDefaults() async {
+    final seed = getShoppingListForWeek(_currentWeekIndex, _currentWeekKey);
+    final have = _items.map((i) => i.name.toLowerCase()).toSet();
+    final missing = seed.where((s) => !have.contains(s.name.toLowerCase())).toList();
+    if (missing.isNotEmpty) {
+      await StorageService.bulkInsertShoppingItems(missing);
+      _items = await StorageService.getShoppingItems(_currentWeekKey);
+      notifyListeners();
+    }
+  }
+
   String copyList() {
     final buf = StringBuffer();
     for (final entry in grouped.entries) {

@@ -357,7 +357,7 @@ class _AboutCard extends StatelessWidget {
                 child: const Icon(Icons.favorite, color: Color(0xFF06251A), size: 20),
               ),
               const SizedBox(width: 12),
-              const Text('Dieter v1.0.6',
+              const Text('Dieter v1.0.7',
                   style: TextStyle(color: AppColors.textHi, fontSize: 15, fontWeight: FontWeight.w700)),
             ],
           ),

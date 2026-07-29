@@ -9,9 +9,14 @@ class ProgressProvider extends ChangeNotifier {
   List<BodyMetric> _metrics = [];
   List<DailyCheck> _recentChecks = [];
   List<WorkoutLog> _workoutLogs = [];
+  Map<String, int> _itemCheckCounts = {};
+  int _trackedItemCount = 0;
   bool _loading = true;
 
   DateTime _date = DateTime.now();
+
+  /// Max achievable daily score, used to scale the heatmap.
+  int get maxDailyScore => _trackedItemCount + DailyCheck.trainingScoreMax;
 
   List<BodyMetric> get metrics => _metrics;
   List<DailyCheck> get recentChecks => _recentChecks;
@@ -40,9 +45,17 @@ class ProgressProvider extends ChangeNotifier {
     final to = selectedString;
     _recentChecks = await StorageService.getChecksRange(from, to);
     _workoutLogs = await StorageService.getWorkoutLogs(from, to);
+    _itemCheckCounts = await StorageService.getCustomCheckCounts(from, to);
+    _trackedItemCount = (await StorageService.getCustomItems()).length;
 
     _loading = false;
     notifyListeners();
+  }
+
+  Future<void> deleteMetric(BodyMetric metric) async {
+    if (metric.id == null) return;
+    await StorageService.deleteMetric(metric.id!);
+    await load(_date);
   }
 
   Future<void> addMetric(BodyMetric metric) async {
@@ -86,11 +99,11 @@ class ProgressProvider extends ChangeNotifier {
         .fold(0, (sum, l) => sum + (l.durationMinutes ?? 0));
   }
 
-  // Returns last 30 days as map date->score
+  /// date → daily score (checked tracked items + training-linked checks).
   Map<String, int> get habitHeatmap {
-    final result = <String, int>{};
+    final result = <String, int>{..._itemCheckCounts};
     for (final check in _recentChecks) {
-      result[check.date] = check.completionScore;
+      result[check.date] = (result[check.date] ?? 0) + check.trainingScore;
     }
     return result;
   }

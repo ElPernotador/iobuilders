@@ -13,6 +13,8 @@ class ShoppingScreen extends StatefulWidget {
 }
 
 class _ShoppingScreenState extends State<ShoppingScreen> {
+  bool _editing = false;
+
   @override
   void initState() {
     super.initState();
@@ -40,6 +42,12 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                 subtitle: provider.weekKey,
                 actions: [
                   IconButton(
+                    icon: Icon(_editing ? Icons.check : Icons.edit_outlined,
+                        color: _editing ? AppColors.primary : AppColors.textMid),
+                    tooltip: _editing ? 'Listo' : 'Editar lista',
+                    onPressed: () => setState(() => _editing = !_editing),
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.copy_outlined, color: AppColors.textMid),
                     tooltip: 'Copiar lista',
                     onPressed: () {
@@ -51,7 +59,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.refresh, color: AppColors.textMid),
-                    tooltip: 'Resetear semana',
+                    tooltip: 'Desmarcar todo',
                     onPressed: () => _confirmReset(ctx, provider),
                   ),
                 ],
@@ -67,8 +75,30 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                       ...grouped.entries.map((entry) => _CategorySection(
                             category: entry.key,
                             items: entry.value,
+                            editing: _editing,
                             onToggle: provider.toggleItem,
+                            onRename: provider.renameItem,
+                            onDelete: provider.deleteItem,
+                            onAdd: (name) => provider.addItem(name, entry.key),
                           )),
+                      if (_editing) ...[
+                        Gap.s,
+                        _NewCategoryCard(provider: provider),
+                        Gap.m,
+                        Center(
+                          child: TextButton.icon(
+                            onPressed: () async {
+                              await provider.restoreWeekDefaults();
+                              if (!ctx.mounted) return;
+                              ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                                  content: Text('Lista por defecto restaurada')));
+                            },
+                            icon: const Icon(Icons.restore, size: 16, color: AppColors.textMid),
+                            label: const Text('Restaurar lista por defecto',
+                                style: TextStyle(color: AppColors.textMid, fontSize: 13)),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -147,8 +177,20 @@ class _ProgressCard extends StatelessWidget {
 class _CategorySection extends StatelessWidget {
   final String category;
   final List<ShoppingItem> items;
+  final bool editing;
   final Function(ShoppingItem) onToggle;
-  const _CategorySection({required this.category, required this.items, required this.onToggle});
+  final void Function(ShoppingItem, String) onRename;
+  final Function(ShoppingItem) onDelete;
+  final ValueChanged<String> onAdd;
+  const _CategorySection({
+    required this.category,
+    required this.items,
+    required this.editing,
+    required this.onToggle,
+    required this.onRename,
+    required this.onDelete,
+    required this.onAdd,
+  });
 
   IconData get _icon {
     final c = category.toLowerCase();
@@ -190,7 +232,18 @@ class _CategorySection extends StatelessWidget {
                 children: [
                   for (int i = 0; i < items.length; i++) ...[
                     if (i > 0) const Divider(height: 1, color: AppColors.hairlineSoft),
-                    _ItemRow(item: items[i], onToggle: () => onToggle(items[i])),
+                    editing
+                        ? _EditItemRow(
+                            key: ValueKey('sh_${items[i].id}'),
+                            item: items[i],
+                            onRename: (n) => onRename(items[i], n),
+                            onDelete: () => onDelete(items[i]),
+                          )
+                        : _ItemRow(item: items[i], onToggle: () => onToggle(items[i])),
+                  ],
+                  if (editing) ...[
+                    const Divider(height: 1, color: AppColors.hairlineSoft),
+                    _ShoppingAddRow(onAdd: onAdd),
                   ],
                 ],
               ),
@@ -232,6 +285,218 @@ class _ItemRow extends StatelessWidget {
                   )),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── Editing the list ─────────────────────────────
+
+/// A shopping item in edit mode: rename inline or delete.
+class _EditItemRow extends StatefulWidget {
+  final ShoppingItem item;
+  final ValueChanged<String> onRename;
+  final VoidCallback onDelete;
+  const _EditItemRow({
+    super.key,
+    required this.item,
+    required this.onRename,
+    required this.onDelete,
+  });
+  @override
+  State<_EditItemRow> createState() => _EditItemRowState();
+}
+
+class _EditItemRowState extends State<_EditItemRow> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.item.name);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _ctrl,
+              style: const TextStyle(color: AppColors.textHi, fontSize: 14.5),
+              cursorColor: AppColors.primary,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              onSubmitted: widget.onRename,
+              onTapOutside: (_) {
+                if (_ctrl.text.trim() != widget.item.name) {
+                  widget.onRename(_ctrl.text);
+                }
+              },
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
+            tooltip: 'Eliminar',
+            visualDensity: VisualDensity.compact,
+            onPressed: widget.onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Inline add row inside a category.
+class _ShoppingAddRow extends StatefulWidget {
+  final ValueChanged<String> onAdd;
+  const _ShoppingAddRow({required this.onAdd});
+  @override
+  State<_ShoppingAddRow> createState() => _ShoppingAddRowState();
+}
+
+class _ShoppingAddRowState extends State<_ShoppingAddRow> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final t = _ctrl.text.trim();
+    if (t.isEmpty) return;
+    widget.onAdd(t);
+    _ctrl.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surfaceAlt,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: Row(
+        children: [
+          const Icon(Icons.add, size: 18, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _ctrl,
+              style: const TextStyle(color: AppColors.textHi, fontSize: 14.5),
+              cursorColor: AppColors.primary,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Añadir artículo',
+                hintStyle: TextStyle(color: AppColors.textLo),
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.check, color: AppColors.primary, size: 20),
+            tooltip: 'Añadir',
+            visualDensity: VisualDensity.compact,
+            onPressed: _submit,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Creates an item in a brand-new category.
+class _NewCategoryCard extends StatefulWidget {
+  final ShoppingProvider provider;
+  const _NewCategoryCard({required this.provider});
+  @override
+  State<_NewCategoryCard> createState() => _NewCategoryCardState();
+}
+
+class _NewCategoryCardState extends State<_NewCategoryCard> {
+  final _name = TextEditingController();
+  final _category = TextEditingController();
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _category.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final n = _name.text.trim();
+    final c = _category.text.trim();
+    if (n.isEmpty || c.isEmpty) return;
+    widget.provider.addItem(n, c);
+    _name.clear();
+    _category.clear();
+    FocusScope.of(context).unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionLabel('Nueva categoría', padding: EdgeInsets.only(bottom: 8)),
+          Row(
+            children: [
+              Expanded(
+                child: _MiniInput(controller: _category, hint: 'Categoría'),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: _MiniInput(controller: _name, hint: 'Artículo'),
+              ),
+              const SizedBox(width: 10),
+              IconButton.filled(
+                onPressed: _submit,
+                style: IconButton.styleFrom(backgroundColor: AppColors.primary),
+                icon: const Icon(Icons.add, color: Color(0xFF06251A)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniInput extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  const _MiniInput({required this.controller, required this.hint});
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      style: const TextStyle(color: AppColors.textHi, fontSize: 14),
+      cursorColor: AppColors.primary,
+      textCapitalization: TextCapitalization.sentences,
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: hint,
+        hintStyle: const TextStyle(color: AppColors.textLo, fontSize: 13),
+        filled: true,
+        fillColor: AppColors.surfaceAlt,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
         ),
       ),
     );

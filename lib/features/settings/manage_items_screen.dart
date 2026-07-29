@@ -149,7 +149,7 @@ class _ItemEditRowState extends State<_ItemEditRow> {
       );
     }
     return ListTile(
-      leading: const Icon(Icons.star_outline, color: AppColors.textMid, size: 20),
+      leading: Icon(iconForKey(widget.item.icon), color: AppColors.textMid, size: 20),
       title: Text(widget.item.name, style: const TextStyle(color: AppColors.textHi, fontSize: 15)),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
