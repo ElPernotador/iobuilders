@@ -6,9 +6,8 @@ class Tabs {
   static const today = 0;
   static const meals = 1;
   static const training = 2;
-  static const shopping = 3;
-  static const progress = 4;
-  static const settings = 5;
+  static const progress = 3;
+  static const settings = 4;
 }
 
 /// Holds the selected bottom-nav tab so any screen can switch tabs

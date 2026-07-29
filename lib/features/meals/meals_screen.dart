@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/date_utils.dart';
 import '../../core/mealdb_service.dart';
+import '../../core/models/planned_meal.dart';
 import '../../core/models/recipe.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../shopping/shopping_screen.dart';
 import 'meals_provider.dart';
 
 class MealsScreen extends StatefulWidget {
@@ -60,14 +63,31 @@ class _MealsScreenState extends State<MealsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _ShoppingEntryCard(
+                        onTap: () => Navigator.of(ctx).push(MaterialPageRoute(
+                            builder: (_) =>
+                                ShoppingScreen(weekOf: provider.weekStart))),
+                      ),
+                      Gap.xl,
                       const SectionLabel('Plan de hoy'),
+                      if (provider.todayBreakfast != null) ...[
+                        _MealCard(
+                          meal: 'Desayuno',
+                          icon: Icons.free_breakfast,
+                          accent: AppColors.blue,
+                          recipe: provider.todayBreakfast!,
+                          onChange: () =>
+                              _showReplaceSheet(ctx, provider, MealSlot.breakfast),
+                        ),
+                        Gap.m,
+                      ],
                       if (provider.todayLunch != null)
                         _MealCard(
                           meal: 'Almuerzo',
                           icon: Icons.wb_sunny,
                           accent: AppColors.orange,
                           recipe: provider.todayLunch!,
-                          onChange: () => _showReplaceSheet(ctx, provider, 'lunch'),
+                          onChange: () => _showReplaceSheet(ctx, provider, MealSlot.lunch),
                         ),
                       if (provider.todayDinner != null) ...[
                         Gap.m,
@@ -76,18 +96,20 @@ class _MealsScreenState extends State<MealsScreen> {
                           icon: Icons.nightlight_round,
                           accent: AppColors.purple,
                           recipe: provider.todayDinner!,
-                          onChange: () => _showReplaceSheet(ctx, provider, 'dinner'),
+                          onChange: () => _showReplaceSheet(ctx, provider, MealSlot.dinner),
                         ),
                       ],
                       if (provider.todayLunch == null && provider.todayDinner == null)
                         const AppCard(
-                          child: Text('No hay plan para hoy.',
+                          child: Text('No hay comidas planificadas para hoy.',
                               style: TextStyle(color: AppColors.textMid)),
                         ),
                       if (provider.todaySnack != null) ...[
                         Gap.m,
                         _SnackCard(snack: provider.todaySnack!),
                       ],
+                      Gap.xl,
+                      _WeekPlanner(provider: provider),
                       Gap.xl,
                       SectionLabel(
                         'Todas las recetas · ${all.length}',
@@ -1122,6 +1144,398 @@ class _InternetSearchSheetState extends State<_InternetSearchSheet> {
             ),
           ),
       ],
+    );
+  }
+}
+
+// ───────────────────────── Shopping entry point ───────────────────────────
+
+class _ShoppingEntryCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ShoppingEntryCard({required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: const Icon(Icons.shopping_cart, color: AppColors.primary, size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Lista de la compra',
+                    style: TextStyle(
+                        color: AppColors.textHi, fontSize: 15, fontWeight: FontWeight.w700)),
+                SizedBox(height: 2),
+                Text('Generada desde tu plan de comidas',
+                    style: TextStyle(color: AppColors.textMid, fontSize: 12)),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: AppColors.textLo),
+        ],
+      ),
+    );
+  }
+}
+
+// ──────────────────────────── Week meal planner ───────────────────────────
+
+class _WeekPlanner extends StatelessWidget {
+  final MealsProvider provider;
+  const _WeekPlanner({required this.provider});
+
+  static const _dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+  @override
+  Widget build(BuildContext context) {
+    final days = provider.weekDays;
+    final start = days.first;
+    final end = days.last;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionLabel(
+          'Planificar la semana',
+          trailing: Text('${provider.plannedCount} comidas',
+              style: const TextStyle(color: AppColors.textMid, fontSize: 12)),
+        ),
+        AppCard(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left, color: AppColors.textMid),
+                tooltip: 'Semana anterior',
+                onPressed: () => provider.shiftWeek(-1),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      '${start.day}/${start.month} – ${end.day}/${end.month}',
+                      style: const TextStyle(
+                          color: AppColors.textHi, fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+                    if (provider.isCurrentWeek)
+                      const Text('Esta semana',
+                          style: TextStyle(color: AppColors.primary, fontSize: 11))
+                    else
+                      GestureDetector(
+                        onTap: provider.resetWeek,
+                        child: const Text('Volver a esta semana',
+                            style: TextStyle(color: AppColors.blue, fontSize: 11)),
+                      ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, color: AppColors.textMid),
+                tooltip: 'Semana siguiente',
+                onPressed: () => provider.shiftWeek(1),
+              ),
+            ],
+          ),
+        ),
+        Gap.m,
+        ...days.asMap().entries.map((e) => _PlannerDayCard(
+              key: ValueKey('plan_${AppDateUtils.toDateString(e.value)}'),
+              provider: provider,
+              date: e.value,
+              dayLabel: _dayNames[e.key],
+            )),
+        Gap.m,
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  await provider.fillWeekFromSuggestions();
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Semana rellenada con el plan sugerido')));
+                },
+                icon: const Icon(Icons.auto_awesome, size: 16, color: AppColors.blue),
+                label: const Text('Rellenar sugerido',
+                    style: TextStyle(color: AppColors.blue, fontSize: 13)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.blue),
+                  minimumSize: const Size(0, 46),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ),
+        Gap.s,
+        PrimaryButton(
+          label: 'Generar lista de la compra',
+          icon: Icons.shopping_cart_checkout,
+          onPressed: () async {
+            final count = await provider.generateShoppingList();
+            if (!context.mounted) return;
+            if (count == 0) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('No hay comidas planificadas en esta semana')));
+              return;
+            }
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('$count artículos generados desde el plan'),
+              action: SnackBarAction(
+                label: 'Ver',
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => ShoppingScreen(weekOf: provider.weekStart))),
+              ),
+            ));
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// One day in the planner: a row per slot, tap to assign or clear.
+class _PlannerDayCard extends StatelessWidget {
+  final MealsProvider provider;
+  final DateTime date;
+  final String dayLabel;
+  const _PlannerDayCard({
+    super.key,
+    required this.provider,
+    required this.date,
+    required this.dayLabel,
+  });
+
+  bool get _isToday =>
+      AppDateUtils.toDateString(date) == AppDateUtils.todayString();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      color: _isToday ? AppColors.primary.withValues(alpha: 0.06) : AppColors.surface,
+      border: Border.all(
+          color: _isToday ? AppColors.primary.withValues(alpha: 0.3) : AppColors.hairline),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('$dayLabel ${date.day}',
+                  style: TextStyle(
+                      color: _isToday ? AppColors.primary : AppColors.textHi,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800)),
+              if (_isToday) ...[
+                const SizedBox(width: 6),
+                const Text('hoy',
+                    style: TextStyle(color: AppColors.primary, fontSize: 11)),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          ...MealSlot.all.map((slot) => _SlotRow(
+                provider: provider,
+                date: date,
+                slot: slot,
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+class _SlotRow extends StatelessWidget {
+  final MealsProvider provider;
+  final DateTime date;
+  final String slot;
+  const _SlotRow({required this.provider, required this.date, required this.slot});
+
+  @override
+  Widget build(BuildContext context) {
+    final freeText = MealSlot.isFreeText(slot);
+    final recipe = freeText ? null : provider.recipeFor(date, slot);
+    final note = freeText ? provider.noteFor(date, slot) : null;
+    final planned = provider.isPlanned(date, slot);
+    final hasValue = recipe != null || (note != null && note.isNotEmpty);
+
+    return InkWell(
+      onTap: () => freeText ? _editNote(context) : _pickRecipe(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 74,
+              child: Text(MealSlot.label(slot),
+                  style: const TextStyle(color: AppColors.textMid, fontSize: 12)),
+            ),
+            Expanded(
+              child: Text(
+                recipe?.title ?? (note?.isNotEmpty == true ? note! : 'Sin asignar'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: hasValue ? AppColors.textHi : AppColors.textLo,
+                  fontSize: 13.5,
+                  fontStyle: hasValue ? FontStyle.normal : FontStyle.italic,
+                ),
+              ),
+            ),
+            if (hasValue && !planned)
+              const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Text('sugerido',
+                    style: TextStyle(color: AppColors.textLo, fontSize: 10.5)),
+              ),
+            if (hasValue)
+              IconButton(
+                icon: const Icon(Icons.close, size: 16, color: AppColors.textLo),
+                tooltip: 'Quitar',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.only(left: 8),
+                onPressed: () => provider.clearSlot(date, slot),
+              )
+            else
+              const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Icon(Icons.add, size: 16, color: AppColors.primary),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _pickRecipe(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.8,
+        maxChildSize: 0.95,
+        builder: (_, sc) => ListView(
+          controller: sc,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            const _SheetHandle(),
+            const SizedBox(height: 10),
+            Text('${MealSlot.label(slot)} · ${date.day}/${date.month}',
+                style: const TextStyle(
+                    color: AppColors.textHi, fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            const Text('Elegí una receta',
+                style: TextStyle(color: AppColors.textLo, fontSize: 12)),
+            const SizedBox(height: 12),
+            ...provider.getAllRecipes().map((r) => AppCard(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  onTap: () {
+                    Navigator.pop(context);
+                    provider.planRecipe(date, slot, r.id);
+                  },
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(r.title,
+                                style: const TextStyle(
+                                    color: AppColors.textHi,
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 3),
+                            Text('${r.totalMinutes} min · ${r.ingredients.length} ingredientes',
+                                style: const TextStyle(color: AppColors.textLo, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.add_circle_outline, color: AppColors.primary, size: 20),
+                    ],
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _editNote(BuildContext context) {
+    final ctrl = TextEditingController(text: provider.noteFor(date, slot) ?? '');
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          left: 20,
+          right: 20,
+          top: 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _SheetHandle(),
+            const SizedBox(height: 12),
+            Text('${MealSlot.label(slot)} · ${date.day}/${date.month}',
+                style: const TextStyle(
+                    color: AppColors.textHi, fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              style: const TextStyle(color: AppColors.textHi),
+              cursorColor: AppColors.primary,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                hintText: 'Ej: Yogur griego con fruta',
+                hintStyle: const TextStyle(color: AppColors.textLo),
+                filled: true,
+                fillColor: AppColors.surfaceAlt,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onSubmitted: (v) {
+                Navigator.pop(context);
+                provider.planNote(date, slot, v);
+              },
+            ),
+            const SizedBox(height: 14),
+            PrimaryButton(
+              label: 'Guardar',
+              icon: Icons.check,
+              onPressed: () {
+                Navigator.pop(context);
+                provider.planNote(date, slot, ctrl.text);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../../core/models/app_settings.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
-import 'manage_items_screen.dart';
 import 'settings_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -81,13 +80,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               (h, m) => provider.update(AppSettings.fromMap(
                                   {...s.toMap(), 'shoppingHour': h, 'shoppingMinute': m}))),
                         ],
-                      ]),
-                      Gap.xl,
-                      const SectionLabel('Personalización'),
-                      _Group(children: [
-                        _ActionTile(Icons.tune, 'Mis ítems personalizados', AppColors.primary,
-                            () => Navigator.of(ctx).push(MaterialPageRoute(
-                                builder: (_) => const ManageItemsScreen()))),
                       ]),
                       Gap.xl,
                       const SectionLabel('Datos'),
@@ -357,7 +349,7 @@ class _AboutCard extends StatelessWidget {
                 child: const Icon(Icons.favorite, color: Color(0xFF06251A), size: 20),
               ),
               const SizedBox(width: 12),
-              const Text('Dieter v1.0.7',
+              const Text('Dieter v1.0.8',
                   style: TextStyle(color: AppColors.textHi, fontSize: 15, fontWeight: FontWeight.w700)),
             ],
           ),

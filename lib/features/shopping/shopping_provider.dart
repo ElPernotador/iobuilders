@@ -22,11 +22,13 @@ class ShoppingProvider extends ChangeNotifier {
     return map;
   }
 
-  Future<void> load() async {
+  /// Loads the list for the week containing [anchor] (defaults to today), so the
+  /// screen can follow whichever week the meal planner is showing.
+  Future<void> load([DateTime? anchor]) async {
     _loading = true;
     notifyListeners();
 
-    final today = DateTime.now();
+    final today = anchor ?? DateTime.now();
     _currentWeekKey = AppDateUtils.weekKey(today);
     _currentWeekIndex = AppDateUtils.planWeekIndex(DateTime(2026, 6, 28), today);
 
@@ -92,17 +94,6 @@ class ShoppingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Re-inserts this week's default list without touching items the user added.
-  Future<void> restoreWeekDefaults() async {
-    final seed = getShoppingListForWeek(_currentWeekIndex, _currentWeekKey);
-    final have = _items.map((i) => i.name.toLowerCase()).toSet();
-    final missing = seed.where((s) => !have.contains(s.name.toLowerCase())).toList();
-    if (missing.isNotEmpty) {
-      await StorageService.bulkInsertShoppingItems(missing);
-      _items = await StorageService.getShoppingItems(_currentWeekKey);
-      notifyListeners();
-    }
-  }
 
   String copyList() {
     final buf = StringBuffer();

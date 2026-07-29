@@ -4,10 +4,14 @@ import 'package:provider/provider.dart';
 import '../../core/models/recipe.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../meals/meals_provider.dart';
 import 'shopping_provider.dart';
 
 class ShoppingScreen extends StatefulWidget {
-  const ShoppingScreen({super.key});
+  /// Week to show; defaults to the current one. Comidas passes the week the meal
+  /// planner is on so the list always matches the plan you just generated.
+  final DateTime? weekOf;
+  const ShoppingScreen({super.key, this.weekOf});
   @override
   State<ShoppingScreen> createState() => _ShoppingScreenState();
 }
@@ -19,7 +23,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ShoppingProvider>().load();
+      context.read<ShoppingProvider>().load(widget.weekOf);
     });
   }
 
@@ -84,21 +88,26 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                       if (_editing) ...[
                         Gap.s,
                         _NewCategoryCard(provider: provider),
-                        Gap.m,
-                        Center(
-                          child: TextButton.icon(
-                            onPressed: () async {
-                              await provider.restoreWeekDefaults();
-                              if (!ctx.mounted) return;
-                              ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-                                  content: Text('Lista por defecto restaurada')));
-                            },
-                            icon: const Icon(Icons.restore, size: 16, color: AppColors.textMid),
-                            label: const Text('Restaurar lista por defecto',
-                                style: TextStyle(color: AppColors.textMid, fontSize: 13)),
-                          ),
-                        ),
                       ],
+                      Gap.m,
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            final meals = ctx.read<MealsProvider>();
+                            final count = await meals.generateShoppingList();
+                            await provider.load(widget.weekOf);
+                            if (!ctx.mounted) return;
+                            ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                              content: Text(count == 0
+                                  ? 'No hay comidas planificadas esta semana'
+                                  : 'Lista regenerada: $count artículos'),
+                            ));
+                          },
+                          icon: const Icon(Icons.sync, size: 16, color: AppColors.blue),
+                          label: const Text('Regenerar desde el plan de comidas',
+                              style: TextStyle(color: AppColors.blue, fontSize: 13)),
+                        ),
+                      ),
                     ],
                   ),
                 ),

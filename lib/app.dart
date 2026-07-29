@@ -10,7 +10,6 @@ import 'features/progress/progress_screen.dart';
 import 'features/settings/settings_provider.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/shopping/shopping_provider.dart';
-import 'features/shopping/shopping_screen.dart';
 import 'features/today/today_provider.dart';
 import 'features/today/today_screen.dart';
 import 'features/training/training_provider.dart';
@@ -49,11 +48,12 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
+  // Compras is not a tab: it lives inside Comidas (the shopping list comes from
+  // the meal plan), reachable from a button there.
   static const _screens = [
     TodayScreen(),
     MealsScreen(),
     TrainingScreen(),
-    ShoppingScreen(),
     ProgressScreen(),
     SettingsScreen(),
   ];
@@ -86,10 +86,6 @@ class _MainShellState extends State<MainShell> {
                 icon: Icon(Icons.fitness_center_outlined),
                 selectedIcon: Icon(Icons.fitness_center),
                 label: 'Entreno'),
-            NavigationDestination(
-                icon: Icon(Icons.shopping_cart_outlined),
-                selectedIcon: Icon(Icons.shopping_cart),
-                label: 'Compras'),
             NavigationDestination(
                 icon: Icon(Icons.insights_outlined),
                 selectedIcon: Icon(Icons.insights),

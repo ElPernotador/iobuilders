@@ -6,7 +6,7 @@ teléfono (SQLite), sin cuentas ni servidores.
 **Todo es editable.** La app viene con contenido por defecto (hábitos,
 ejercicios, recetas y lista de compra), pero nada está fijo: podés renombrar,
 borrar, reordenar y agregar en cada sección, y restaurar los valores por defecto
-cuando quieras.
+cuando quieras. La edición está siempre donde cargás los datos, no en Ajustes.
 
 ## Qué hace
 
@@ -19,15 +19,17 @@ cuando quieras.
   automáticamente si registrás dolor (oculta ejercicios no seguros para hombro o
   rodilla). Editable: podés agregar ejercicios propios y quitar los que no uses.
   Bici con minutos e intensidad; movilidad y misión de la mañana.
-- **Comidas** — plan de 26 semanas con recetas, notas para intestino/hígado,
-  reemplazo de comidas, recetas propias y búsqueda de recetas nuevas en internet
-  (TheMealDB, sin API key).
-- **Compras** — lista semanal por categorías, copiable, con recordatorios en los
-  días de la semana que elijas.
+- **Comidas** — todo lo relacionado con comer vive acá:
+  - **Plan de hoy** con desayuno, almuerzo, cena y snack.
+  - **Planificador semanal**: navegás semanas y asignás una receta a cada comida
+    de cada día (o rellenás la semana con el plan sugerido de 26 semanas).
+  - **Lista de la compra generada desde tu plan**: junta los ingredientes de las
+    recetas planificadas, suma las cantidades repetidas y las agrupa por
+    categoría. Editable a mano y con recordatorios en los días que elijas.
 - **Progreso** — peso y cintura con gráficos, fotos de seguimiento por fecha,
   mapa de calor de hábitos.
-- **Ítems personalizados** — agregá lo que quieras seguir a diario
-  (Ajustes → Mis ítems) y aparece como check en Hoy.
+- **Ítems personalizados** — agregá lo que quieras seguir a diario (ej.
+  Minoxidil) desde el propio Hoy con el botón "Editar".
 
 ## Build
 
@@ -47,7 +49,8 @@ versión publicada está en [`releases/`](releases/).
 ```
 lib/
   core/       # tema, widgets compartidos, storage (SQLite), notificaciones,
-              # controladores de fecha y navegación, cliente TheMealDB
+              # controladores de fecha y navegación, cliente TheMealDB,
+              # agregador de ingredientes (plan → lista de compra)
   data/       # datos semilla: plan de entrenamiento, recetas, plan de comidas, compras
   features/   # today, meals, training, shopping, progress, settings
 android/      # app nativa (com.dieter.app) + receivers de arranque/desbloqueo

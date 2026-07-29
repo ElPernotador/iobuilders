@@ -7,6 +7,7 @@ import 'models/workout.dart';
 import 'models/recipe.dart';
 import 'models/app_settings.dart';
 import 'models/custom_item.dart';
+import 'models/planned_meal.dart';
 import '../data/seed_recipes.dart';
 import '../data/seed_tracked_items.dart';
 import '../data/seed_training_plan.dart';
@@ -30,7 +31,7 @@ class StorageService {
     final path = join(dbPath, 'dieter.db');
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onUpgrade: (db, oldV, newV) async {
         if (oldV < 2) {
           await _createV2Tables(db);
@@ -41,10 +42,14 @@ class StorageService {
         if (oldV < 4) {
           await _migrateToV4(db);
         }
+        if (oldV < 5) {
+          await _createV5Tables(db);
+        }
       },
       onCreate: (db, version) async {
         await _createV2Tables(db);
         await _createV3Tables(db);
+        await _createV5Tables(db);
         await _seedAll(db);
         await db.execute('''
           CREATE TABLE daily_checks (
@@ -360,6 +365,51 @@ class StorageService {
     await _seedAll(db);
   }
 
+  /// v5: the user's own meal plan (one row per day + slot).
+  static Future<void> _createV5Tables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS planned_meals (
+        date TEXT NOT NULL,
+        mealType TEXT NOT NULL,
+        recipeId TEXT,
+        note TEXT,
+        PRIMARY KEY (date, mealType)
+      )
+    ''');
+  }
+
+  // --- Meal plan ---
+
+  /// date → { mealType → PlannedMeal } for the given inclusive range.
+  static Future<Map<String, Map<String, PlannedMeal>>> getPlannedMeals(
+      String from, String to) async {
+    final database = await db;
+    final rows = await database.query('planned_meals',
+        where: 'date >= ? AND date <= ?', whereArgs: [from, to]);
+    final out = <String, Map<String, PlannedMeal>>{};
+    for (final r in rows) {
+      final meal = PlannedMeal.fromMap(r);
+      out.putIfAbsent(meal.date, () => {})[meal.mealType] = meal;
+    }
+    return out;
+  }
+
+  static Future<void> setPlannedMeal(String date, String mealType,
+      {String? recipeId, String? note}) async {
+    final database = await db;
+    await database.insert(
+      'planned_meals',
+      {'date': date, 'mealType': mealType, 'recipeId': recipeId, 'note': note},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<void> clearPlannedMeal(String date, String mealType) async {
+    final database = await db;
+    await database.delete('planned_meals',
+        where: 'date = ? AND mealType = ?', whereArgs: [date, mealType]);
+  }
+
   /// Seeds every default set. Runs once (create / upgrade), so deletions stick.
   static Future<void> _seedAll(Database db) async {
     await _seedDefaultItems(db);
@@ -641,6 +691,18 @@ class StorageService {
   static Future<void> deleteShoppingItem(int id) async {
     final database = await db;
     await database.delete('shopping_items', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Swaps the whole week's list for [items] in one transaction.
+  static Future<void> replaceShoppingListForWeek(
+      String weekKey, List<ShoppingItem> items) async {
+    final database = await db;
+    await database.transaction((txn) async {
+      await txn.delete('shopping_items', where: 'weekKey = ?', whereArgs: [weekKey]);
+      for (final item in items) {
+        await txn.insert('shopping_items', item.toMap());
+      }
+    });
   }
 
   static Future<void> deleteShoppingItemsForWeek(String weekKey) async {
